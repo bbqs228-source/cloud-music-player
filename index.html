@@ -3,12 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>雲端音樂播放器 (自動同步版)</title>
+  <title>雲端音樂播放器 (原版介面 + 循環模式)</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #fff; padding: 20px; display: flex; justify-content: center; }
     .player-card { background: #1e1e1e; padding: 24px; border-radius: 16px; width: 100%; max-width: 400px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); text-align: center; }
     .cover-art { width: 180px; height: 180px; border-radius: 12px; object-fit: cover; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-    audio { width: 100%; margin-top: 12px; }
+    
+    /* 播放器上方工具列 (放置循環按鈕) */
+    .player-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .loop-mode-btn { background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+    .loop-mode-btn:hover { background: #3a3a3a; }
+    
+    audio { width: 100%; margin-top: 8px; }
     .lyrics-container { width: 100%; height: 130px; overflow-y: auto; margin-top: 16px; scroll-behavior: smooth; scrollbar-width: none; }
     .lyrics-container::-webkit-scrollbar { display: none; }
     .lyric-line { color: #777; font-size: 14px; padding: 4px 0; transition: color 0.3s; }
@@ -23,9 +29,16 @@
 
   <div class="player-card">
     <img id="cover-art" class="cover-art" src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=300&auto=format&fit=crop" alt="封面">
-    <h3 id="track-title" style="margin: 0 0 4px 0;">載入中...</h3>
-    <p id="track-artist" style="color: #aaa; font-size: 14px; margin: 0;">Google Drive 自動播放器</p>
     
+    <div class="player-toolbar">
+      <span id="track-artist" style="color: #aaa; font-size: 14px;">Google Drive 播放器</span>
+      <!-- 循環模式切換按鈕 -->
+      <button id="loop-btn" class="loop-mode-btn">🔁 列表循環</button>
+    </div>
+
+    <h3 id="track-title" style="margin: 0 0 8px 0; text-align: left;">載入中...</h3>
+    
+    <!-- 原版帶控制項的 audio 標籤 -->
     <audio id="audio-player" controls preload="metadata"></audio>
 
     <div class="lyrics-container" id="lyrics-container">
@@ -45,12 +58,28 @@
     let playlistData = [];
     let currentIndex = 0;
     let parsedLyrics = [];
+    let loopMode = 'list'; // 'list': 列表循環, 'single': 單曲循環, 'shuffle': 隨機播放
 
     const audio = document.getElementById('audio-player');
     const titleEl = document.getElementById('track-title');
     const lyricsContainer = document.getElementById('lyrics-container');
     const playlistContainer = document.getElementById('playlist');
     const loadingMsg = document.getElementById('loading-msg');
+    const loopBtn = document.getElementById('loop-btn');
+
+    // 循環模式按鈕點擊切換邏輯
+    loopBtn.addEventListener('click', () => {
+      if (loopMode === 'list') {
+        loopMode = 'single';
+        loopBtn.textContent = '🔂 單曲循環';
+      } else if (loopMode === 'single') {
+        loopMode = 'shuffle';
+        loopBtn.textContent = '🔀 隨機播放';
+      } else {
+        loopMode = 'list';
+        loopBtn.textContent = '🔁 列表循環';
+      }
+    });
 
     // 1. 透過 Google Drive API 抓取資料夾裡的所有檔案
     async function fetchDriveFiles() {
@@ -64,11 +93,9 @@
           return;
         }
 
-        // 分離 MP3 與 LRC 檔案
         const mp3Files = data.files.filter(f => f.name.toLowerCase().endsWith('.mp3'));
         const lrcFiles = data.files.filter(f => f.name.toLowerCase().endsWith('.lrc'));
 
-        // 配對 MP3 與 LRC (檔名相同即自動關聯)
         playlistData = mp3Files.map(mp3 => {
           const baseName = mp3.name.substring(0, mp3.name.lastIndexOf('.'));
           const matchedLrc = lrcFiles.find(lrc => lrc.name.substring(0, lrc.name.lastIndexOf('.')) === baseName);
@@ -93,7 +120,6 @@
       }
     }
 
-    // 2. 抓取並解析 LRC 歌詞
     async function fetchLRC(lrcId) {
       if (!lrcId) return [];
       const url = `https://www.googleapis.com/drive/v3/files/${lrcId}?alt=media&key=${API_KEY}`;
@@ -129,9 +155,8 @@
       const track = playlistData[index];
       currentIndex = index;
       titleEl.textContent = track.title;
-        audio.src = `https://www.googleapis.com/drive/v3/files/${track.id}?alt=media&key=${API_KEY}`;
+      audio.src = `https://www.googleapis.com/drive/v3/files/${track.id}?alt=media&key=${API_KEY}`;
 
-      // 載入對應歌詞
       lyricsContainer.innerHTML = '<div class="lyric-line">載入歌詞中...</div>';
       parsedLyrics = await fetchLRC(track.lrcId);
       
@@ -175,6 +200,23 @@
       }
     });
 
+    // 根據循環模式決定歌曲結束後的行為
+    audio.addEventListener('ended', () => {
+      if (loopMode === 'single') {
+        audio.currentTime = 0;
+        audio.play();
+      } else if (loopMode === 'shuffle') {
+        const randomIndex = Math.floor(Math.random() * playlistData.length);
+        loadTrack(randomIndex);
+        audio.play();
+      } else {
+        // 預設列表循環
+        const next = (currentIndex + 1) % playlistData.length;
+        loadTrack(next);
+        audio.play();
+      }
+    });
+
     function renderPlaylist() {
       playlistContainer.innerHTML = '';
       playlistData.forEach((track, index) => {
@@ -190,12 +232,6 @@
       const buttons = playlistContainer.querySelectorAll('.track-btn');
       buttons.forEach((btn, idx) => btn.classList.toggle('active', idx === currentIndex));
     }
-
-    audio.onended = () => {
-      const next = (currentIndex + 1) % playlistData.length;
-      loadTrack(next);
-      audio.play();
-    };
 
     // 啟動 API 抓取
     fetchDriveFiles();
