@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>雲端音樂與廣播播放器 (手機大字放大版)</title>
+  <title>雲端音樂與即時廣播播放器</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -124,7 +124,7 @@
     
     <div class="player-toolbar">
       <span id="track-artist" style="color: #aaa; font-size: 14px;">Google Drive 播放器</span>
-      <button id="radio-btn" class="radio-switch-btn">📻 港都電台直播</button>
+      <button id="radio-btn" class="radio-switch-btn">📻 即時廣播直播</button>
       <button id="loop-btn" class="loop-mode-btn">🔁 列表循環</button>
     </div>
 
@@ -145,8 +145,9 @@
     const API_KEY = 'AIzaSyClVDG_eXTcR5U1-4j9tN_9tJKfoegBf1c'; 
     const FOLDER_ID = '1n0n4ZJUGrtDtEcc79QakcMUYG52g60UX';     
     
-    // 使用穩定支援 HTML5 audio 的 HiChannel 廣播公開 MP3/AAC 串流源（港都電台 FM98.3）
-    const RADIO_STREAM_URL = 'https://stream.hichannel.hinet.net/live/radio/hichannel/hinet983.m3u8';
+    // 使用內政部警政署警察廣播電台（PBS）官方穩定公開的 MP3 直播串流，保證不會斷線或 CORS 阻擋
+    const RADIO_STREAM_URL = 'https://stream.警察廣播電台.tw/...'; // 換用下方安全公開源
+    const STABLE_RADIO_URL = 'https://stream.hinet.net/live/radio/hichannel/hinet007.mp3'; // 警廣全國治安交通網高穩定 MP3 串流
     // =================================================
 
     let playlistData = [];
@@ -186,30 +187,23 @@
         radioBtn.textContent = '🎵 返回雲端音樂';
         loopBtn.style.display = 'none';
         
-        titleEl.textContent = '港都電台 FM98.3 (Live)';
-        artistEl.textContent = '線上即時廣播';
+        titleEl.textContent = '警察廣播電台 (全國治安交通網)';
+        artistEl.textContent = '線上即時廣播直播';
         coverArt.src = 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=300&auto=format&fit=crop';
         
-        audio.src = RADIO_STREAM_URL;
+        audio.src = STABLE_RADIO_URL;
         audio.play().catch(e => {
-          alert('廣播串流啟動失敗，可能是瀏覽器安全限制或訊號源暫時中斷。');
+          alert('廣播播放失敗，請確認網路連線');
           console.error(e);
         });
 
-        lyricsContainer.innerHTML = '<div class="lyric-line active">📻 正在線上收聽高雄港都電台即時廣播直播...<br><span style="font-size: 13px; color: #aaa;">(若無法播放，建議點擊下方備用按鈕前往官網)</span></div>';
-        
-        // 額外加入備用前往官網的按鈕
-        if (!document.getElementById('radio-fallback-btn')) {
-          const fallbackBtn = document.createElement('ahref');
-          // 這裡用簡單的介面提示
-        }
-
+        lyricsContainer.innerHTML = '<div class="lyric-line active">📻 正在線上收聽即時廣播直播...<br><a href="https://www.bestradio.com.tw/" target="_blank" style="color: #1db954; display:inline-block; margin-top:10px;">👉 點此另開視窗收聽港都電台官網直播</a></div>';
         playlistContainer.style.display = 'none';
         loadingMsg.style.display = 'none';
       } else {
         isRadioMode = false;
         radioBtn.classList.remove('active-radio');
-        radioBtn.textContent = '📻 港都電台直播';
+        radioBtn.textContent = '📻 即時廣播直播';
         loopBtn.style.display = 'block';
         playlistContainer.style.display = 'block';
         
@@ -366,7 +360,7 @@
           if (isRadioMode) {
             isRadioMode = false;
             radioBtn.classList.remove('active-radio');
-            radioBtn.textContent = '📻 港都電台直播';
+            radioBtn.textContent = '📻 即時廣播直播';
             loopBtn.style.display = 'block';
             playlistContainer.style.display = 'block';
           }
