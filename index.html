@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>雲端音樂播放器 (自動同步版)</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #fff; padding: 20px; display: flex; justify-content: center; }
+    .player-card { background: #1e1e1e; padding: 24px; border-radius: 16px; width: 100%; max-width: 400px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); text-align: center; }
+    .cover-art { width: 180px; height: 180px; border-radius: 12px; object-fit: cover; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+    audio { width: 100%; margin-top: 12px; }
+    .lyrics-container { width: 100%; height: 130px; overflow-y: auto; margin-top: 16px; scroll-behavior: smooth; scrollbar-width: none; }
+    .lyrics-container::-webkit-scrollbar { display: none; }
+    .lyric-line { color: #777; font-size: 14px; padding: 4px 0; transition: color 0.3s; }
+    .lyric-line.active { color: #1db954; font-size: 16px; font-weight: bold; }
+    .playlist { margin-top: 20px; text-align: left; max-height: 200px; overflow-y: auto; }
+    .track-btn { width: 100%; padding: 10px; margin: 4px 0; background: #2a2a2a; color: #fff; border: none; border-radius: 6px; cursor: pointer; text-align: left; }
+    .track-btn.active { background: #1db954; color: #000; font-weight: bold; }
+    .loading { color: #aaa; font-size: 14px; margin: 20px 0; }
+  </style>
+</head>
+<body>
+
+  <div class="player-card">
+    <img id="cover-art" class="cover-art" src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=300&auto=format&fit=crop" alt="封面">
+    <h3 id="track-title" style="margin: 0 0 4px 0;">載入中...</h3>
+    <p id="track-artist" style="color: #aaa; font-size: 14px; margin: 0;">Google Drive 自動播放器</p>
+    
+    <audio id="audio-player" controls preload="metadata"></audio>
+
+    <div class="lyrics-container" id="lyrics-container">
+      <div class="lyric-line">自動搜尋同名 .lrc 歌詞中...</div>
+    </div>
+
+    <div id="loading-msg" class="loading">正在讀取 [MUSIC] 資料夾...</div>
+    <div class="playlist" id="playlist"></div>
+  </div>
+
+  <script>
+    // ================= 您的專屬設定 =================
+    const API_KEY = 'AIzaSyClVDG_eXTcR5U1-4j9tN_9tJKfoegBf1c'; 
+    const FOLDER_ID = '1n0n4ZJUGrtDtEcc79QakcMUYG52g60UX';     
+    // =================================================
+
+    let playlistData = [];
+    let currentIndex = 0;
+    let parsedLyrics = [];
+
+    const audio = document.getElementById('audio-player');
+    const titleEl = document.getElementById('track-title');
+    const lyricsContainer = document.getElementById('lyrics-container');
+    const playlistContainer = document.getElementById('playlist');
+    const loadingMsg = document.getElementById('loading-msg');
+
+    // 1. 透過 Google Drive API 抓取資料夾裡的所有檔案
+    async function fetchDriveFiles() {
+      const url = `https://www.googleapis.com/drive/v3/files?q='${FOLDER_ID}'+in+parents+and+trashed=false&fields=files(id,name,mimeType)&key=${API_KEY}`;
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (!data.files) {
+          loadingMsg.textContent = '無法讀取資料夾，請檢查 API Key 或權限。';
+          return;
+        }
+
+        // 分離 MP3 與 LRC 檔案
+        const mp3Files = data.files.filter(f => f.name.toLowerCase().endsWith('.mp3'));
+        const lrcFiles = data.files.filter(f => f.name.toLowerCase().endsWith('.lrc'));
+
+        // 配對 MP3 與 LRC (檔名相同即自動關聯)
+        playlistData = mp3Files.map(mp3 => {
+          const baseName = mp3.name.substring(0, mp3.name.lastIndexOf('.'));
+          const matchedLrc = lrcFiles.find(lrc => lrc.name.substring(0, lrc.name.lastIndexOf('.')) === baseName);
+          return {
+            title: baseName,
+            id: mp3.id,
+            lrcId: matchedLrc ? matchedLrc.id : null
+          };
+        });
+
+        loadingMsg.style.display = 'none';
+        if (playlistData.length > 0) {
+          renderPlaylist();
+          loadTrack(0);
+        } else {
+          loadingMsg.textContent = '[MUSIC] 資料夾內沒有 MP3 檔案。';
+          loadingMsg.style.display = 'block';
+        }
+      } catch (err) {
+        console.error(err);
+        loadingMsg.textContent = '讀取失敗，請確認 API 狀態。';
+      }
+    }
+
+    // 2. 抓取並解析 LRC 歌詞
+    async function fetchLRC(lrcId) {
+      if (!lrcId) return [];
+      const url = `https://www.googleapis.com/drive/v3/files/${lrcId}?alt=media&key=${API_KEY}`;
+      try {
+        const res = await fetch(url);
+        const text = await res.text();
+        return parseLRC(text);
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function parseLRC(lrcString) {
+      if (!lrcString) return [];
+      const lines = lrcString.split('\n');
+      const regex = /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/;
+      const lyrics = [];
+      for (const line of lines) {
+        const match = line.match(regex);
+        if (match) {
+          const min = parseInt(match[1], 10);
+          const sec = parseInt(match[2], 10);
+          const ms = parseInt(match[3], 10);
+          const time = min * 60 + sec + ms / (match[3].length === 2 ? 100 : 1000);
+          const text = match[4].trim();
+          if (text) lyrics.push({ time, text });
+        }
+      }
+      return lyrics;
+    }
+
+    async function loadTrack(index) {
+      const track = playlistData[index];
+      currentIndex = index;
+      titleEl.textContent = track.title;
+        audio.src = `https://www.googleapis.com/drive/v3/files/${track.id}?alt=media&key=${API_KEY}`;
+
+      // 載入對應歌詞
+      lyricsContainer.innerHTML = '<div class="lyric-line">載入歌詞中...</div>';
+      parsedLyrics = await fetchLRC(track.lrcId);
+      
+      lyricsContainer.innerHTML = '';
+      if (parsedLyrics.length > 0) {
+        parsedLyrics.forEach((lyric, idx) => {
+          const div = document.createElement('div');
+          div.className = 'lyric-line';
+          div.id = `lyric-${idx}`;
+          div.textContent = lyric.text;
+          lyricsContainer.appendChild(div);
+        });
+      } else {
+        lyricsContainer.innerHTML = '<div class="lyric-line">無提供歌詞 (.lrc)</div>';
+      }
+
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, album: 'Google Drive MUSIC' });
+      }
+
+      updatePlaylistUI();
+    }
+
+    // 歌詞同步播放處理
+    audio.addEventListener('timeupdate', () => {
+      if (parsedLyrics.length === 0) return;
+      const currentTime = audio.currentTime;
+      let activeIndex = -1;
+      for (let i = 0; i < parsedLyrics.length; i++) {
+        if (currentTime >= parsedLyrics[i].time) activeIndex = i;
+        else break;
+      }
+      if (activeIndex !== -1) {
+        const allLines = lyricsContainer.querySelectorAll('.lyric-line');
+        allLines.forEach(line => line.classList.remove('active'));
+        const activeLine = document.getElementById(`lyric-${activeIndex}`);
+        if (activeLine && !activeLine.classList.contains('active')) {
+          activeLine.classList.add('active');
+          activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    });
+
+    function renderPlaylist() {
+      playlistContainer.innerHTML = '';
+      playlistData.forEach((track, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'track-btn';
+        btn.textContent = `${index + 1}. ${track.title}`;
+        btn.onclick = () => { loadTrack(index); audio.play(); };
+        playlistContainer.appendChild(btn);
+      });
+    }
+
+    function updatePlaylistUI() {
+      const buttons = playlistContainer.querySelectorAll('.track-btn');
+      buttons.forEach((btn, idx) => btn.classList.toggle('active', idx === currentIndex));
+    }
+
+    audio.onended = () => {
+      const next = (currentIndex + 1) % playlistData.length;
+      loadTrack(next);
+      audio.play();
+    };
+
+    // 啟動 API 抓取
+    fetchDriveFiles();
+  </script>
+</body>
+</html>
