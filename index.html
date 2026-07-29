@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>雲端音樂播放器 (手機大字放大版)</title>
+  <title>客家精神雲端音樂播放器 (手機大字放大版)</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -17,7 +17,6 @@
       min-height: 100vh;
     }
     
-    /* 放大卡片寬度，貼近手機兩側 */
     .player-card { 
       background: #1e1e1e; 
       padding: 20px 16px; 
@@ -28,7 +27,7 @@
       text-align: center; 
     }
 
-    /* 放大專輯封面 */
+    /* 放大專輯封面，並加上游標指標與切換動畫效果 */
     .cover-art { 
       width: 100%; 
       max-width: 260px; 
@@ -37,26 +36,34 @@
       object-fit: cover; 
       margin-bottom: 14px; 
       box-shadow: 0 6px 16px rgba(0,0,0,0.5); 
+      cursor: pointer; /* 滑鼠移過去會顯示手指，提示可點擊 */
+      transition: opacity 0.2s ease-in-out;
     }
     
-    /* 工具列與按鈕放大 */
     .player-toolbar { 
       display: flex; 
       justify-content: space-between; 
       align-items: center; 
       margin-bottom: 8px; 
+      gap: 8px;
     }
-    .loop-mode-btn { 
+    
+    .loop-mode-btn, .radio-switch-btn { 
       background: #2a2a2a; 
       color: #fff; 
       border: 1px solid #555; 
       border-radius: 8px; 
-      padding: 8px 14px; 
-      font-size: 14px; 
+      padding: 8px 12px; 
+      font-size: 13px; 
       cursor: pointer; 
     }
     
-    /* 放大歌名 */
+    .radio-switch-btn.active-radio {
+      background: #d93025;
+      border-color: #d93025;
+      font-weight: bold;
+    }
+    
     h3#track-title { 
       margin: 4px 0 12px 0; 
       font-size: 20px; 
@@ -66,7 +73,6 @@
     
     audio { width: 100%; margin-top: 6px; }
 
-    /* 放大歌詞顯示區與字體 */
     .lyrics-container { 
       width: 100%; 
       height: 150px; 
@@ -78,17 +84,16 @@
     .lyrics-container::-webkit-scrollbar { display: none; }
     .lyric-line { 
       color: #777; 
-      font-size: 16px; /* 放大未播放歌詞 */
+      font-size: 16px; 
       padding: 6px 0; 
       transition: color 0.3s; 
     }
     .lyric-line.active { 
       color: #1db954; 
-      font-size: 19px; /* 顯著放大當前歌唱歌詞 */
+      font-size: 19px; 
       font-weight: bold; 
     }
 
-    /* 放大播放清單按鈕與文字 */
     .playlist { 
       margin-top: 16px; 
       text-align: left; 
@@ -105,7 +110,7 @@
       border-radius: 10px; 
       cursor: pointer; 
       text-align: left; 
-      font-size: 15px; /* 放大歌單字體 */
+      font-size: 15px; 
     }
     .track-btn.active { 
       background: #1db954; 
@@ -118,10 +123,12 @@
 <body>
 
   <div class="player-card">
-    <img id="cover-art" class="cover-art" src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=300&auto=format&fit=crop" alt="封面">
+    <!-- 預設載入 1.jpg，並加上提示文字 -->
+    <img id="cover-art" class="cover-art" src="1.jpg" alt="客家精神播放器封面" title="點擊切換封面圖片">
     
     <div class="player-toolbar">
-      <span id="track-artist" style="color: #aaa; font-size: 15px;">Google Drive 播放器</span>
+      <span id="track-artist" style="color: #aaa; font-size: 14px;">MZG 馬子狗</span>
+      <button id="radio-btn" class="radio-switch-btn">📻 即時廣播直播</button>
       <button id="loop-btn" class="loop-mode-btn">🔁 列表循環</button>
     </div>
 
@@ -141,21 +148,46 @@
     // ================= 您的專屬設定 =================
     const API_KEY = 'AIzaSyClVDG_eXTcR5U1-4j9tN_9tJKfoegBf1c'; 
     const FOLDER_ID = '1n0n4ZJUGrtDtEcc79QakcMUYG52g60UX';     
+    const STABLE_RADIO_URL = 'https://stream.hinet.net/live/radio/hichannel/hinet007.mp3'; 
     // =================================================
 
     let playlistData = [];
     let currentIndex = 0;
     let parsedLyrics = [];
     let loopMode = 'list'; 
+    let isRadioMode = false;
+    let currentCover = 1; // 記錄目前是第幾張圖 (1 或是 2)
 
     const audio = document.getElementById('audio-player');
     const titleEl = document.getElementById('track-title');
+    const artistEl = document.getElementById('track-artist');
+    const coverArt = document.getElementById('cover-art');
     const lyricsContainer = document.getElementById('lyrics-container');
     const playlistContainer = document.getElementById('playlist');
     const loadingMsg = document.getElementById('loading-msg');
     const loopBtn = document.getElementById('loop-btn');
+    const radioBtn = document.getElementById('radio-btn');
+
+    // === 【新增功能】點擊封面切換圖片 ===
+    coverArt.addEventListener('click', () => {
+      // 稍微加上淡出淡入效果會更滑順
+      coverArt.style.opacity = '0.5';
+      
+      setTimeout(() => {
+        if (currentCover === 1) {
+          coverArt.src = '2.jpg';
+          currentCover = 2;
+        } else {
+          coverArt.src = '1.jpg';
+          currentCover = 1;
+        }
+        coverArt.style.opacity = '1';
+      }, 150);
+    });
+    // ===================================
 
     loopBtn.addEventListener('click', () => {
+      if (isRadioMode) return;
       if (loopMode === 'list') {
         loopMode = 'single';
         loopBtn.textContent = '🔂 單曲循環';
@@ -165,6 +197,40 @@
       } else {
         loopMode = 'list';
         loopBtn.textContent = '🔁 列表循環';
+      }
+    });
+
+    radioBtn.addEventListener('click', () => {
+      if (!isRadioMode) {
+        isRadioMode = true;
+        radioBtn.classList.add('active-radio');
+        radioBtn.textContent = '🎵 返回雲端音樂';
+        loopBtn.style.display = 'none';
+        
+        titleEl.textContent = '警察廣播電台 (全國治安交通網)';
+        artistEl.textContent = '線上即時廣播直播';
+        // 廣播模式下依然維持你選擇的客家精神封面
+        coverArt.src = currentCover === 1 ? '1.jpg' : '2.jpg';
+        
+        audio.src = STABLE_RADIO_URL;
+        audio.play().catch(e => {
+          alert('廣播播放失敗，請確認網路連線');
+          console.error(e);
+        });
+
+        lyricsContainer.innerHTML = '<div class="lyric-line active">📻 正在線上收聽即時廣播直播...<br><a href="https://www.bestradio.com.tw/" target="_blank" style="color: #1db954; display:inline-block; margin-top:10px;">👉 點此另開視窗收聽港都電台官網直播</a></div>';
+        playlistContainer.style.display = 'none';
+        loadingMsg.style.display = 'none';
+      } else {
+        isRadioMode = false;
+        radioBtn.classList.remove('active-radio');
+        radioBtn.textContent = '📻 即時廣播直播';
+        loopBtn.style.display = 'block';
+        playlistContainer.style.display = 'block';
+        
+        if (playlistData.length > 0) {
+          loadTrack(currentIndex);
+        }
       }
     });
 
@@ -238,9 +304,15 @@
     }
 
     async function loadTrack(index) {
+      if (isRadioMode) return;
       const track = playlistData[index];
       currentIndex = index;
       titleEl.textContent = track.title;
+      artistEl.textContent = 'MZG 馬子狗';
+      
+      // 切換歌曲時，依然維持你選擇的客家精神封面
+      coverArt.src = currentCover === 1 ? '1.jpg' : '2.jpg';
+      
       audio.src = `https://www.googleapis.com/drive/v3/files/${track.id}?alt=media&key=${API_KEY}`;
 
       lyricsContainer.innerHTML = '<div class="lyric-line">載入歌詞中...</div>';
@@ -260,14 +332,14 @@
       }
 
       if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, album: 'Google Drive MUSIC' });
+        navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, album: 'MZG 客家精神音樂播放器' });
       }
 
       updatePlaylistUI();
     }
 
     audio.addEventListener('timeupdate', () => {
-      if (parsedLyrics.length === 0) return;
+      if (isRadioMode || parsedLyrics.length === 0) return;
       const currentTime = audio.currentTime;
       let activeIndex = -1;
       for (let i = 0; i < parsedLyrics.length; i++) {
@@ -286,6 +358,7 @@
     });
 
     audio.addEventListener('ended', () => {
+      if (isRadioMode) return;
       if (loopMode === 'single') {
         audio.currentTime = 0;
         audio.play();
@@ -306,7 +379,17 @@
         const btn = document.createElement('button');
         btn.className = 'track-btn';
         btn.textContent = `${index + 1}. ${track.title}`;
-        btn.onclick = () => { loadTrack(index); audio.play(); };
+        btn.onclick = () => { 
+          if (isRadioMode) {
+            isRadioMode = false;
+            radioBtn.classList.remove('active-radio');
+            radioBtn.textContent = '📻 即時廣播直播';
+            loopBtn.style.display = 'block';
+            playlistContainer.style.display = 'block';
+          }
+          loadTrack(index); 
+          audio.play(); 
+        };
         playlistContainer.appendChild(btn);
       });
     }
