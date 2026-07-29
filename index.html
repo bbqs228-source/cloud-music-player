@@ -27,17 +27,45 @@
       text-align: center; 
     }
 
-    /* 放大專輯封面，並加上游標指標與切換動畫效果 */
+    /* 新增收合封面的按鈕樣式 */
+    .toggle-cover-btn {
+      background: #2a2a2a;
+      color: #ccc;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      margin-bottom: 12px;
+      width: 100%;
+      transition: background 0.2s;
+    }
+    .toggle-cover-btn:hover {
+      background: #3a3a3a;
+    }
+
+    /* 放大專輯封面，並加上游標指標與縮放隱藏的動畫效果 */
     .cover-art { 
       width: 100%; 
       max-width: 260px; 
       height: 260px; 
       border-radius: 14px; 
       object-fit: cover; 
-      margin-bottom: 14px; 
+      margin: 0 auto 14px auto; 
       box-shadow: 0 6px 16px rgba(0,0,0,0.5); 
-      cursor: pointer; /* 滑鼠移過去會顯示手指，提示可點擊 */
-      transition: opacity 0.2s ease-in-out;
+      cursor: pointer; 
+      display: block;
+      /* 縮放與隱藏的滑順過渡動畫 */
+      transition: height 0.3s ease, opacity 0.3s ease, margin 0.3s ease, transform 0.3s ease;
+    }
+    
+    /* 觸發隱藏時的 CSS 狀態 */
+    .cover-art.hidden-cover {
+      height: 0;
+      opacity: 0;
+      margin-bottom: 0;
+      transform: scale(0.8);
+      pointer-events: none; /* 防止隱藏時還能點擊到圖片 */
     }
     
     .player-toolbar { 
@@ -123,6 +151,10 @@
 <body>
 
   <div class="player-card">
+    
+    <!-- 新增：控制封面顯示/隱藏的按鈕 -->
+    <button id="toggle-cover-btn" class="toggle-cover-btn">🔽 縮小並隱藏封面</button>
+
     <!-- 預設載入 1.jpg，並加上提示文字 -->
     <img id="cover-art" class="cover-art" src="1.jpg" alt="客家精神播放器封面" title="點擊切換封面圖片">
     
@@ -156,7 +188,8 @@
     let parsedLyrics = [];
     let loopMode = 'list'; 
     let isRadioMode = false;
-    let currentCover = 1; // 記錄目前是第幾張圖 (1 或是 2)
+    let currentCover = 1; 
+    let isCoverHidden = false; // 紀錄封面是否已隱藏
 
     const audio = document.getElementById('audio-player');
     const titleEl = document.getElementById('track-title');
@@ -167,12 +200,24 @@
     const loadingMsg = document.getElementById('loading-msg');
     const loopBtn = document.getElementById('loop-btn');
     const radioBtn = document.getElementById('radio-btn');
+    const toggleCoverBtn = document.getElementById('toggle-cover-btn');
 
-    // === 【新增功能】點擊封面切換圖片 ===
+    // === 【新增功能】隱藏 / 顯示封面 ===
+    toggleCoverBtn.addEventListener('click', () => {
+      isCoverHidden = !isCoverHidden;
+      if (isCoverHidden) {
+        coverArt.classList.add('hidden-cover');
+        toggleCoverBtn.textContent = '🖼️ 展開顯示封面';
+      } else {
+        coverArt.classList.remove('hidden-cover');
+        toggleCoverBtn.textContent = '🔽 縮小並隱藏封面';
+      }
+    });
+    // ===================================
+
+    // === 點擊封面切換圖片 ===
     coverArt.addEventListener('click', () => {
-      // 稍微加上淡出淡入效果會更滑順
       coverArt.style.opacity = '0.5';
-      
       setTimeout(() => {
         if (currentCover === 1) {
           coverArt.src = '2.jpg';
@@ -184,7 +229,6 @@
         coverArt.style.opacity = '1';
       }, 150);
     });
-    // ===================================
 
     loopBtn.addEventListener('click', () => {
       if (isRadioMode) return;
@@ -209,7 +253,6 @@
         
         titleEl.textContent = '警察廣播電台 (全國治安交通網)';
         artistEl.textContent = '線上即時廣播直播';
-        // 廣播模式下依然維持你選擇的客家精神封面
         coverArt.src = currentCover === 1 ? '1.jpg' : '2.jpg';
         
         audio.src = STABLE_RADIO_URL;
@@ -310,7 +353,6 @@
       titleEl.textContent = track.title;
       artistEl.textContent = 'MZG 馬子狗';
       
-      // 切換歌曲時，依然維持你選擇的客家精神封面
       coverArt.src = currentCover === 1 ? '1.jpg' : '2.jpg';
       
       audio.src = `https://www.googleapis.com/drive/v3/files/${track.id}?alt=media&key=${API_KEY}`;
