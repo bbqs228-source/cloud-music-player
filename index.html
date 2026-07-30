@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>客家精神雲端音樂播放器 (記憶進度版)</title>
+  <title>客家精神雲端音樂播放器 (完美排版版)</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -60,11 +60,40 @@
     
     audio { width: 100%; margin-top: 6px; }
 
+    /* --- 音樂選單區塊 (移至上方並優化) --- */
+    .playlist { 
+      margin-top: 16px;
+      margin-bottom: 16px; 
+      text-align: left; 
+      height: 240px; /* 固定高度讓選單好滑動 */
+      overflow-y: auto; 
+      background: #181818; /* 加上微暗底色區分區塊 */
+      border-radius: 12px;
+      padding: 10px;
+    }
+    .track-btn { 
+      width: 100%; 
+      padding: 14px 16px; 
+      margin: 4px 0; 
+      background: #2a2a2a; 
+      color: #fff; 
+      border: none; 
+      border-radius: 10px; 
+      cursor: pointer; 
+      text-align: left; 
+      font-size: 16px; 
+    }
+    .track-btn.active { 
+      background: #1db954; 
+      color: #000; 
+      font-weight: bold; 
+    }
+    
+    /* --- 歌詞區塊 (移至下方並調整高度) --- */
     .lyrics-container { 
       width: 100%; 
-      height: 350px; 
+      height: 200px; /* 調整高度，把空間還給音樂選單 */
       overflow-y: auto; 
-      margin-top: 20px; 
       scroll-behavior: smooth; 
       scrollbar-width: none; 
       background: #181818; 
@@ -86,29 +115,6 @@
       font-weight: bold; 
     }
 
-    .playlist { 
-      margin-top: 20px; 
-      text-align: left; 
-      max-height: 220px; 
-      overflow-y: auto; 
-    }
-    .track-btn { 
-      width: 100%; 
-      padding: 14px 16px; 
-      margin: 6px 0; 
-      background: #2a2a2a; 
-      color: #fff; 
-      border: none; 
-      border-radius: 10px; 
-      cursor: pointer; 
-      text-align: left; 
-      font-size: 16px; 
-    }
-    .track-btn.active { 
-      background: #1db954; 
-      color: #000; 
-      font-weight: bold; 
-    }
     .loading { color: #aaa; font-size: 15px; margin: 20px 0; }
   </style>
 </head>
@@ -122,15 +128,19 @@
       <button id="loop-btn" class="loop-mode-btn">🔁 列表循環</button>
     </div>
 
+    <!-- 標題與播放器 -->
     <h3 id="track-title">載入中...</h3>
     <audio id="audio-player" controls preload="metadata"></audio>
 
+    <!-- 【改版重點】將播放清單移到播放器正下方，方便立刻選歌 -->
+    <div id="loading-msg" class="loading">正在讀取 [MUSIC] 資料夾...</div>
+    <div class="playlist" id="playlist"></div>
+
+    <!-- 歌詞顯示區移到最下方 -->
     <div class="lyrics-container" id="lyrics-container">
       <div class="lyric-line">自動搜尋同名 .lrc 歌詞中...</div>
     </div>
 
-    <div id="loading-msg" class="loading">正在讀取 [MUSIC] 資料夾...</div>
-    <div class="playlist" id="playlist"></div>
   </div>
 
   <script>
@@ -199,7 +209,6 @@
         playlistContainer.style.display = 'block';
         
         if (playlistData.length > 0) {
-          // 切回音樂時，載入上次記錄的歌曲與時間
           const savedTime = parseFloat(localStorage.getItem(SAVED_TIME_KEY)) || 0;
           loadTrack(currentIndex, savedTime);
         }
@@ -234,11 +243,8 @@
         if (playlistData.length > 0) {
           renderPlaylist();
           
-          // 讀取本地記憶，決定要從哪一首、哪一秒開始播
           let savedIndex = parseInt(localStorage.getItem(SAVED_INDEX_KEY)) || 0;
           let savedTime = parseFloat(localStorage.getItem(SAVED_TIME_KEY)) || 0;
-          
-          // 防呆：如果雲端檔案被刪除，導致索引超過，則回到第 1 首
           if (savedIndex >= playlistData.length) savedIndex = 0;
           
           loadTrack(savedIndex, savedTime);
@@ -283,7 +289,6 @@
       return lyrics;
     }
 
-    // 加入 resumeTime 參數來設定啟動秒數
     async function loadTrack(index, resumeTime = 0) {
       if (isRadioMode) return;
       const track = playlistData[index];
@@ -293,11 +298,10 @@
       
       audio.src = `https://www.googleapis.com/drive/v3/files/${track.id}?alt=media&key=${API_KEY}`;
       
-      // 等待音訊資料載入後，直接跳轉到記憶的秒數
       audio.onloadedmetadata = () => {
         if (resumeTime > 0) {
           audio.currentTime = resumeTime;
-          resumeTime = 0; // 歸零避免影響後續切歌
+          resumeTime = 0; 
         }
       };
 
@@ -327,10 +331,8 @@
     audio.addEventListener('timeupdate', () => {
       if (isRadioMode) return;
 
-      // === 隨時記憶目前的歌曲與秒數 ===
       localStorage.setItem(SAVED_INDEX_KEY, currentIndex);
       localStorage.setItem(SAVED_TIME_KEY, audio.currentTime);
-      // ==============================
 
       if (parsedLyrics.length === 0) return;
       const currentTime = audio.currentTime;
@@ -380,7 +382,6 @@
             loopBtn.style.display = 'block';
             playlistContainer.style.display = 'block';
           }
-          // 手動點擊切歌時，不帶入記憶秒數（從 0 開始）
           loadTrack(index, 0); 
           audio.play(); 
         };
