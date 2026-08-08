@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>客家精神雲端音樂播放器 (多歌單切換版)</title>
+  <title>客家精神雲端音樂播放器 (深度掃描版)</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -27,7 +27,6 @@
       text-align: center; 
     }
     
-    /* --- 歌單切換下拉選單 --- */
     .folder-selector {
       display: flex;
       align-items: center;
@@ -73,7 +72,6 @@
     
     audio { width: 100%; margin-top: 6px; }
 
-    /* --- 播放控制列 (上一首/循環/下一首) --- */
     .player-toolbar { 
       display: flex; 
       justify-content: space-between; 
@@ -108,7 +106,6 @@
       margin-bottom: 8px;
     }
 
-    /* --- 分類頁籤區塊 --- */
     .playlist-tabs {
       display: flex;
       gap: 8px;
@@ -132,7 +129,6 @@
       border-color: #1db954;
     }
 
-    /* --- 音樂選單區塊 --- */
     .playlist { 
       margin-bottom: 16px; 
       text-align: left; 
@@ -174,7 +170,6 @@
       margin-left: 10px;
     }
 
-    /* --- 歌詞區塊 --- */
     .lyrics-container { 
       width: 100%; 
       height: 200px; 
@@ -209,7 +204,7 @@
       font-weight: bold; 
     }
 
-    .loading { color: #aaa; font-size: 15px; margin: 20px 0; }
+    .loading { color: #aaa; font-size: 15px; margin: 20px 0; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -221,8 +216,7 @@
       <label for="folder-select">📁 選擇歌單</label>
       <select id="folder-select">
         <option value="music1">[MUSIC] 預設主資料夾</option>
-        <option value="music2">[MUSIC2] 其他音樂與專輯</option>
-        <!-- 如果未來還有 MUSIC3，可以直接在這裡複製新增一行 -->
+        <option value="music2">[MUSIC2] 專輯與其他音樂</option>
       </select>
     </div>
 
@@ -261,10 +255,10 @@
     // ================= 您的專屬設定 =================
     const API_KEY = 'AIzaSyClVDG_eXTcR5U1-4j9tN_9tJKfoegBf1c'; 
     
-    // 【重要】請在這裡設定您所有的資料夾 ID
+    // 【已經為您填入正確的資料夾 ID】
     const FOLDERS = {
-      'music1': '1n0n4ZJUGrtDtEcc79QakcMUYG52g60UX', // 原本的 MUSIC 資料夾
-      'music2': '12qXblcE82laVwc7d7VhUoEzusnWTNmZ6'     // 👈 請替換這裡！
+      'music1': '1n0n4ZJUGrtDtEcc79QakcMUYG52g60UX', 
+      'music2': '12qXblcE82laVwc7d7VhUoEzusnWTNmZ6' // 您提供的 MUSIC2 ID
     };
     // =================================================
 
@@ -273,18 +267,14 @@
     let parsedLyrics = [];
     let currentFilter = 'all'; 
 
-    // === 本地記憶 Keys ===
     const SAVED_FOLDER_KEY = 'mzg_saved_folder';
     const SAVED_LOOP_KEY = 'mzg_saved_loop_mode';
     const SAVED_LYRICS_KEY = 'mzg_saved_lyrics_state';
     
-    // 依據不同資料夾，產生專屬的記憶 Key，讓不同資料夾各自記憶進度！
     function getIndexKey() { return `mzg_saved_track_index_${currentFolderKey}`; }
     function getTimeKey() { return `mzg_saved_track_time_${currentFolderKey}`; }
 
-    // 讀取全域記憶狀態
     let currentFolderKey = localStorage.getItem(SAVED_FOLDER_KEY) || 'music1';
-    // 防呆：如果紀錄的資料夾不存在，退回 music1
     if (!FOLDERS[currentFolderKey]) currentFolderKey = 'music1'; 
     
     let loopMode = localStorage.getItem(SAVED_LOOP_KEY) || 'list'; 
@@ -303,13 +293,11 @@
     const toggleLyricsBtn = document.getElementById('toggle-lyrics-btn');
     const folderSelect = document.getElementById('folder-select');
 
-    // 初始化下拉選單
     folderSelect.value = currentFolderKey;
     folderSelect.addEventListener('change', (e) => {
       currentFolderKey = e.target.value;
       localStorage.setItem(SAVED_FOLDER_KEY, currentFolderKey);
       
-      // 切換資料夾時暫停播放，重置畫面並重新讀取
       audio.pause();
       audio.src = '';
       titleEl.textContent = '載入中...';
@@ -317,12 +305,10 @@
       playlistContainer.style.display = 'none';
       tabsContainer.style.display = 'none';
       toggleLyricsBtn.style.display = 'none';
-      loadingMsg.style.display = 'block';
       
       fetchDriveFiles();
     });
 
-    // === 歌詞縮放記憶邏輯 ===
     function updateLyricsUI() {
       if (isLyricsHidden) {
         lyricsContainer.classList.add('hidden-lyrics');
@@ -340,7 +326,6 @@
       updateLyricsUI();
     });
 
-    // === 播放循環記憶邏輯 ===
     function updateLoopUI() {
       if (loopMode === 'single') loopBtn.textContent = '🔂 單曲循環';
       else if (loopMode === 'shuffle') loopBtn.textContent = '🔀 隨機播放';
@@ -357,7 +342,6 @@
       updateLoopUI();
     });
 
-    // === 分類頁籤邏輯 ===
     const tabBtns = document.querySelectorAll('.tab-btn');
     tabBtns.forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -379,7 +363,6 @@
       });
     }
 
-    // === 獲取目前有效歌單 (支援上下首與循環計算) ===
     function getValidIndices() {
       const validIndices = [];
       playlistData.forEach((track, index) => {
@@ -432,26 +415,72 @@
       }
     });
 
-    // === 核心檔案讀取 ===
+    // === 重大升級：深度掃描資料夾的核心邏輯 ===
     async function fetchDriveFiles() {
       const currentId = FOLDERS[currentFolderKey];
-      const url = `https://www.googleapis.com/drive/v3/files?q='${currentId}'+in+parents+and+trashed=false&pageSize=1000&fields=files(id,name,mimeType,size)&key=${API_KEY}`;
       
+      loadingMsg.textContent = '🚀 正在深度掃描資料夾與所有專輯，請稍候...';
+      loadingMsg.style.display = 'block';
+
       try {
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (!data.files) {
-          loadingMsg.textContent = '無法讀取資料夾，請檢查 API Key 或資料夾 ID。';
+        let allMp3s = [];
+        let allLrcs = [];
+        let foldersToScan = [currentId]; // 待掃描的資料夾清單 (一開始只有主資料夾)
+
+        // 當還有資料夾需要掃描時，持續執行 (遞迴搜尋)
+        while (foldersToScan.length > 0) {
+          // 每次最多同時處理 5 個資料夾，避免踩到 Google API 頻率限制
+          const batch = foldersToScan.splice(0, 5);
+          
+          const promises = batch.map(async (fId) => {
+            let pageToken = '';
+            let localMp3s = [];
+            let localLrcs = [];
+            let localFolders = [];
+
+            do {
+              const url = `https://www.googleapis.com/drive/v3/files?q='${fId}'+in+parents+and+trashed=false&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,size)&key=${API_KEY}${pageToken ? '&pageToken=' + pageToken : ''}`;
+              const response = await fetch(url);
+              const data = await response.json();
+              
+              if (data.files) {
+                data.files.forEach(file => {
+                  // 分類抓到的檔案：子資料夾、MP3、歌詞
+                  if (file.mimeType === 'application/vnd.google-apps.folder') {
+                    localFolders.push(file.id);
+                  } else if (file.name.toLowerCase().endsWith('.mp3')) {
+                    localMp3s.push(file);
+                  } else if (file.name.toLowerCase().endsWith('.lrc')) {
+                    localLrcs.push(file);
+                  }
+                });
+              }
+              pageToken = data.nextPageToken;
+            } while (pageToken);
+
+            return { mp3s: localMp3s, lrcs: localLrcs, folders: localFolders };
+          });
+
+          // 等待這批資料夾掃描完畢
+          const results = await Promise.all(promises);
+          
+          results.forEach(res => {
+            allMp3s.push(...res.mp3s);
+            allLrcs.push(...res.lrcs);
+            // 把新發現的子資料夾加進去，下一輪繼續掃描！
+            foldersToScan.push(...res.folders); 
+          });
+        }
+
+        if (allMp3s.length === 0) {
+          loadingMsg.textContent = '這個資料夾及其子資料夾內皆沒有 MP3 檔案。';
           return;
         }
 
-        const mp3Files = data.files.filter(f => f.name.toLowerCase().endsWith('.mp3'));
-        const lrcFiles = data.files.filter(f => f.name.toLowerCase().endsWith('.lrc'));
-
-        playlistData = mp3Files.map(mp3 => {
+        // 統整所有挖出來的音樂資料
+        playlistData = allMp3s.map(mp3 => {
           const baseName = mp3.name.substring(0, mp3.name.lastIndexOf('.'));
-          const matchedLrc = lrcFiles.find(lrc => lrc.name.substring(0, lrc.name.lastIndexOf('.')) === baseName);
+          const matchedLrc = allLrcs.find(lrc => lrc.name.substring(0, lrc.name.lastIndexOf('.')) === baseName);
           const sizeBytes = parseInt(mp3.size || '0', 10);
           const isLong = sizeBytes >= 14400000;
 
@@ -463,26 +492,24 @@
           };
         });
 
+        // 自動依據字母 / 檔名進行排序，確保不同專輯的歌會整理在一起
+        playlistData.sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
+
         loadingMsg.style.display = 'none';
-        if (playlistData.length > 0) {
-          playlistContainer.style.display = 'block';
-          tabsContainer.style.display = 'flex'; 
-          toggleLyricsBtn.style.display = 'block';
-          renderPlaylist();
-          
-          // 讀取「這個資料夾」專屬的記憶進度
-          let savedIndex = parseInt(localStorage.getItem(getIndexKey())) || 0;
-          let savedTime = parseFloat(localStorage.getItem(getTimeKey())) || 0;
-          if (savedIndex >= playlistData.length) savedIndex = 0;
-          
-          loadTrack(savedIndex, savedTime);
-        } else {
-          loadingMsg.textContent = '這個資料夾內沒有 MP3 檔案。';
-          loadingMsg.style.display = 'block';
-        }
+        playlistContainer.style.display = 'block';
+        tabsContainer.style.display = 'flex'; 
+        toggleLyricsBtn.style.display = 'block';
+        renderPlaylist();
+        
+        let savedIndex = parseInt(localStorage.getItem(getIndexKey())) || 0;
+        let savedTime = parseFloat(localStorage.getItem(getTimeKey())) || 0;
+        if (savedIndex >= playlistData.length) savedIndex = 0;
+        
+        loadTrack(savedIndex, savedTime);
+        
       } catch (err) {
         console.error(err);
-        loadingMsg.textContent = '讀取失敗，請確認 API 狀態。';
+        loadingMsg.textContent = '讀取失敗，請確認 API 狀態與網路連線。';
       }
     }
 
@@ -555,7 +582,6 @@
     }
 
     audio.addEventListener('timeupdate', () => {
-      // 隨時寫入「這個資料夾」專屬的記憶進度
       localStorage.setItem(getIndexKey(), currentIndex);
       localStorage.setItem(getTimeKey(), audio.currentTime);
 
@@ -610,7 +636,6 @@
       buttons.forEach((btn, idx) => btn.classList.toggle('active', idx === currentIndex));
     }
 
-    // 啟動時自動載入記憶中的資料夾
     fetchDriveFiles();
   </script>
 </body>
