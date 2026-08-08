@@ -808,6 +808,18 @@
     }
 
     fetchDriveFiles(false);
+        // === iOS 裝置偵測：自動隱藏無效的音量控制 ===
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                  
+    if (isIOS) {
+      const volumeWrapper = document.querySelector('.volume-wrapper');
+      if (volumeWrapper) {
+        volumeWrapper.style.display = 'none';
+        console.log("偵測為 iOS 裝置，已自動隱藏網頁音量控制，請使用實體按鍵。");
+      }
+    }
+
   </script>
 </body>
 </html>
