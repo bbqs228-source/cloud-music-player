@@ -734,9 +734,33 @@
         lyricsContainer.innerHTML = '<div class="lyric-line">無提供歌詞 (.lrc)</div>';
       }
 
+            // ====== 升級版：手機鎖定畫面與背景播放控制 ======
       if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, album: 'MZG 客家精神音樂播放器' });
+        // 1. 設定鎖定畫面顯示的資訊與封面圖
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: track.title, // 抓取當前歌名
+          artist: 'MZG 馬子狗', // 歌手名稱
+          album: '客家精神雲端播放器',
+          artwork: [
+            // 這裡可以換成您自己的圖片網址 (建議 512x512 正方形)
+            { src: 'https://cdn-icons-png.flaticon.com/512/3269/3269985.png', sizes: '512x512', type: 'image/png' }
+          ]
+        });
+
+        // 2. 綁定鎖定畫面上的實體按鈕功能
+        navigator.mediaSession.setActionHandler('play', () => {
+          audio.play();
+          playPauseBtn.textContent = '⏸';
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          audio.pause();
+          playPauseBtn.textContent = '▶';
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
+        navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
       }
+      // =================================================
+
 
       updatePlaylistUI();
     }
