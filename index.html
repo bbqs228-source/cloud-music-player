@@ -489,7 +489,8 @@
             let localFolders = [];
 
             do {
-              const url = `https://www.googleapis.com/drive/v3/files?q='${fId}'+in+parents+and+trashed=false&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,size)&key=${API_KEY}${pageToken ? '&pageToken=' + pageToken : ''}`;
+              // API 請求的 fields 加上 createdTime
+              const url = `https://www.googleapis.com/drive/v3/files?q='${fId}'+in+parents+and+trashed=false&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,size,createdTime)&key=${API_KEY}${pageToken ? '&pageToken=' + pageToken : ''}`;
               const response = await fetch(url);
               
               if (!response.ok) {
@@ -533,16 +534,21 @@
           const matchedLrc = allLrcs.find(lrc => lrc.name.substring(0, lrc.name.lastIndexOf('.')) === baseName);
           const sizeBytes = parseInt(mp3.size || '0', 10);
           const isLong = sizeBytes >= 14400000;
+          
+          // 將雲端的建立時間轉換為時間戳記
+          const createdTime = mp3.createdTime ? new Date(mp3.createdTime).getTime() : 0;
 
           return {
             title: baseName,
             id: mp3.id,
             lrcId: matchedLrc ? matchedLrc.id : null,
-            isLong: isLong
+            isLong: isLong,
+            createdTime: createdTime
           };
         });
 
-        playlistData.sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
+        // 改用建立時間排序 (舊 -> 新，越晚新增的排越後面)
+        playlistData.sort((a, b) => a.createdTime - b.createdTime);
 
         // 【大功告成】把千辛萬苦掃描出來的歌單，直接存進手機記憶體裡！
         localStorage.setItem(cacheKey, JSON.stringify(playlistData));
