@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>客家精神雲端音樂播放器</title>
+  <title>客家精神雲端音樂播放器 (進化記憶版)</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -27,44 +27,63 @@
       text-align: center; 
     }
     
-    .player-toolbar { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-      margin-bottom: 16px; 
-      gap: 8px;
-    }
-    
-    .loop-mode-btn, .radio-switch-btn { 
-      background: #2a2a2a; 
-      color: #fff; 
-      border: 1px solid #555; 
-      border-radius: 8px; 
-      padding: 8px 12px; 
-      font-size: 14px; 
-      cursor: pointer; 
-    }
-    
-    .radio-switch-btn.active-radio {
-      background: #d93025;
-      border-color: #d93025;
-      font-weight: bold;
-    }
-    
     h3#track-title { 
-      margin: 4px 0 16px 0; 
+      margin: 4px 0 6px 0; 
       font-size: 24px; 
       text-align: left; 
       word-break: break-all;
     }
+
+    #track-artist {
+      display: block;
+      text-align: left;
+      color: #aaa; 
+      font-size: 15px;
+      margin-bottom: 12px;
+    }
     
     audio { width: 100%; margin-top: 6px; }
+
+    /* --- 播放控制列 (上一首/循環/下一首) --- */
+    .player-toolbar { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      margin-top: 12px;
+      margin-bottom: 16px; 
+      gap: 8px;
+    }
+    
+    .nav-btn, .loop-mode-btn, .toggle-btn { 
+      background: #2a2a2a; 
+      color: #fff; 
+      border: 1px solid #555; 
+      border-radius: 8px; 
+      padding: 10px 12px; 
+      font-size: 14px; 
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .nav-btn:hover, .loop-mode-btn:hover, .toggle-btn:hover {
+      background: #3a3a3a;
+    }
+
+    .loop-mode-btn {
+      flex: 1; /* 讓循環按鈕填滿中間空間 */
+      font-weight: bold;
+    }
+
+    .toggle-btn {
+      width: 100%;
+      margin-bottom: 8px;
+    }
 
     /* --- 分類頁籤區塊 --- */
     .playlist-tabs {
       display: flex;
       gap: 8px;
-      margin-top: 16px;
+      margin-bottom: 8px;
     }
     .tab-btn {
       flex: 1;
@@ -86,7 +105,6 @@
 
     /* --- 音樂選單區塊 --- */
     .playlist { 
-      margin-top: 8px;
       margin-bottom: 16px; 
       text-align: left; 
       height: 240px; 
@@ -137,9 +155,18 @@
       background: #181818; 
       border-radius: 12px;
       padding: 10px 0;
+      transition: height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
     }
     .lyrics-container::-webkit-scrollbar { display: none; }
     
+    .hidden-lyrics {
+      height: 0;
+      opacity: 0;
+      padding: 0;
+      pointer-events: none;
+      margin: 0;
+    }
+
     .lyric-line { 
       color: #cccccc; 
       font-size: 20px; 
@@ -160,24 +187,31 @@
 
   <div class="player-card">
     
-    <div class="player-toolbar">
-      <span id="track-artist" style="color: #aaa; font-size: 15px;">MZG 馬子狗</span>
-      <button id="radio-btn" class="radio-switch-btn">📻 即時廣播直播</button>
-      <button id="loop-btn" class="loop-mode-btn">🔁 列表循環</button>
-    </div>
-
+    <!-- 標題與播放器 -->
     <h3 id="track-title">載入中...</h3>
+    <span id="track-artist">MZG 馬子狗</span>
     <audio id="audio-player" controls preload="metadata"></audio>
 
+    <!-- 新增：播放控制列 -->
+    <div class="player-toolbar">
+      <button id="prev-btn" class="nav-btn">⏮ 上一首</button>
+      <button id="loop-btn" class="loop-mode-btn">🔁 列表循環</button>
+      <button id="next-btn" class="nav-btn">下一首 ⏭</button>
+    </div>
+
+    <!-- 分類頁籤 -->
     <div class="playlist-tabs" id="playlist-tabs" style="display: none;">
       <button class="tab-btn active" data-filter="all">全部</button>
       <button class="tab-btn" data-filter="short">單曲 (10分內)</button>
       <button class="tab-btn" data-filter="long">長篇 (10分+)</button>
     </div>
 
+    <!-- 播放清單 -->
     <div id="loading-msg" class="loading">正在讀取 [MUSIC] 資料夾...</div>
     <div class="playlist" id="playlist" style="display: none;"></div>
 
+    <!-- 歌詞切換按鈕與顯示區 -->
+    <button id="toggle-lyrics-btn" class="toggle-btn" style="display: none;">🔽 隱藏歌詞</button>
     <div class="lyrics-container" id="lyrics-container">
       <div class="lyric-line">自動搜尋同名 .lrc 歌詞中...</div>
     </div>
@@ -188,29 +222,71 @@
     // ================= 您的專屬設定 =================
     const API_KEY = 'AIzaSyClVDG_eXTcR5U1-4j9tN_9tJKfoegBf1c'; 
     const FOLDER_ID = '1n0n4ZJUGrtDtEcc79QakcMUYG52g60UX';     
-    const STABLE_RADIO_URL = 'https://stream.hinet.net/live/radio/hichannel/hinet007.mp3'; 
     // =================================================
 
     let playlistData = [];
     let currentIndex = 0;
     let parsedLyrics = [];
-    let loopMode = 'list'; 
-    let isRadioMode = false;
     let currentFilter = 'all'; 
 
+    // === 本地記憶 Keys ===
     const SAVED_INDEX_KEY = 'mzg_saved_track_index';
     const SAVED_TIME_KEY = 'mzg_saved_track_time';
+    const SAVED_LOOP_KEY = 'mzg_saved_loop_mode';
+    const SAVED_LYRICS_KEY = 'mzg_saved_lyrics_state';
+
+    // 讀取記憶狀態
+    let loopMode = localStorage.getItem(SAVED_LOOP_KEY) || 'list'; 
+    let isLyricsHidden = localStorage.getItem(SAVED_LYRICS_KEY) === 'true';
 
     const audio = document.getElementById('audio-player');
     const titleEl = document.getElementById('track-title');
-    const artistEl = document.getElementById('track-artist');
     const lyricsContainer = document.getElementById('lyrics-container');
     const playlistContainer = document.getElementById('playlist');
     const tabsContainer = document.getElementById('playlist-tabs');
     const loadingMsg = document.getElementById('loading-msg');
+    
     const loopBtn = document.getElementById('loop-btn');
-    const radioBtn = document.getElementById('radio-btn');
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const toggleLyricsBtn = document.getElementById('toggle-lyrics-btn');
 
+    // === 歌詞縮放記憶邏輯 ===
+    function updateLyricsUI() {
+      if (isLyricsHidden) {
+        lyricsContainer.classList.add('hidden-lyrics');
+        toggleLyricsBtn.textContent = '🖼️ 展開歌詞顯示區';
+      } else {
+        lyricsContainer.classList.remove('hidden-lyrics');
+        toggleLyricsBtn.textContent = '🔽 縮小隱藏歌詞區';
+      }
+    }
+    updateLyricsUI();
+
+    toggleLyricsBtn.addEventListener('click', () => {
+      isLyricsHidden = !isLyricsHidden;
+      localStorage.setItem(SAVED_LYRICS_KEY, isLyricsHidden);
+      updateLyricsUI();
+    });
+
+    // === 播放循環記憶邏輯 ===
+    function updateLoopUI() {
+      if (loopMode === 'single') loopBtn.textContent = '🔂 單曲循環';
+      else if (loopMode === 'shuffle') loopBtn.textContent = '🔀 隨機播放';
+      else loopBtn.textContent = '🔁 列表循環';
+    }
+    updateLoopUI();
+
+    loopBtn.addEventListener('click', () => {
+      if (loopMode === 'list') loopMode = 'single';
+      else if (loopMode === 'single') loopMode = 'shuffle';
+      else loopMode = 'list';
+      
+      localStorage.setItem(SAVED_LOOP_KEY, loopMode);
+      updateLoopUI();
+    });
+
+    // === 分類頁籤邏輯 ===
     const tabBtns = document.querySelectorAll('.tab-btn');
     tabBtns.forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -225,74 +301,78 @@
       const buttons = playlistContainer.querySelectorAll('.track-btn');
       buttons.forEach(btn => {
         const isLong = btn.dataset.isLong === 'true';
-        if (currentFilter === 'all') {
-          btn.style.display = 'flex';
-        } else if (currentFilter === 'short' && !isLong) {
-          btn.style.display = 'flex';
-        } else if (currentFilter === 'long' && isLong) {
-          btn.style.display = 'flex';
-        } else {
-          btn.style.display = 'none';
-        }
+        if (currentFilter === 'all') btn.style.display = 'flex';
+        else if (currentFilter === 'short' && !isLong) btn.style.display = 'flex';
+        else if (currentFilter === 'long' && isLong) btn.style.display = 'flex';
+        else btn.style.display = 'none';
       });
     }
 
-    loopBtn.addEventListener('click', () => {
-      if (isRadioMode) return;
-      if (loopMode === 'list') {
-        loopMode = 'single';
-        loopBtn.textContent = '🔂 單曲循環';
-      } else if (loopMode === 'single') {
-        loopMode = 'shuffle';
-        loopBtn.textContent = '🔀 隨機播放';
+    // === 獲取目前有效歌單 (支援上下首與循環計算) ===
+    function getValidIndices() {
+      const validIndices = [];
+      playlistData.forEach((track, index) => {
+        if (currentFilter === 'all') validIndices.push(index);
+        else if (currentFilter === 'short' && !track.isLong) validIndices.push(index);
+        else if (currentFilter === 'long' && track.isLong) validIndices.push(index);
+      });
+      return validIndices;
+    }
+
+    function playNext() {
+      const validIndices = getValidIndices();
+      if (validIndices.length === 0) return;
+
+      if (loopMode === 'shuffle') {
+        const randomIdx = validIndices[Math.floor(Math.random() * validIndices.length)];
+        loadTrack(randomIdx, 0);
       } else {
-        loopMode = 'list';
-        loopBtn.textContent = '🔁 列表循環';
+        let currentPos = validIndices.indexOf(currentIndex);
+        let nextPos = currentPos !== -1 ? (currentPos + 1) % validIndices.length : 0;
+        loadTrack(validIndices[nextPos], 0);
+      }
+      audio.play();
+    }
+
+    function playPrev() {
+      const validIndices = getValidIndices();
+      if (validIndices.length === 0) return;
+
+      if (loopMode === 'shuffle') {
+        const randomIdx = validIndices[Math.floor(Math.random() * validIndices.length)];
+        loadTrack(randomIdx, 0);
+      } else {
+        let currentPos = validIndices.indexOf(currentIndex);
+        // 計算上一首位置 (防呆處理負數)
+        let prevPos = currentPos !== -1 ? (currentPos - 1 + validIndices.length) % validIndices.length : 0;
+        loadTrack(validIndices[prevPos], 0);
+      }
+      audio.play();
+    }
+
+    nextBtn.addEventListener('click', playNext);
+    prevBtn.addEventListener('click', playPrev);
+
+    audio.addEventListener('ended', () => {
+      // 只有設定為「單曲循環」時才原曲重播，否則一律照著規則播下一首
+      if (loopMode === 'single') {
+        audio.currentTime = 0;
+        audio.play();
+      } else {
+        playNext();
       }
     });
 
-    radioBtn.addEventListener('click', () => {
-      if (!isRadioMode) {
-        isRadioMode = true;
-        radioBtn.classList.add('active-radio');
-        radioBtn.textContent = '🎵 返回雲端音樂';
-        loopBtn.style.display = 'none';
-        
-        titleEl.textContent = '警察廣播電台 (全國治安交通網)';
-        artistEl.textContent = '線上即時廣播直播';
-        
-        audio.src = STABLE_RADIO_URL;
-        audio.play().catch(e => {
-          console.error('廣播播放失敗:', e);
-        });
-
-        lyricsContainer.innerHTML = '<div class="lyric-line active">📻 正在線上收聽即時廣播直播...<br><br><a href="https://www.bestradio.com.tw/" target="_blank" style="color: #1db954; display:inline-block; font-size: 18px;">👉 點此另開視窗收聽港都電台官網</a></div>';
-        playlistContainer.style.display = 'none';
-        tabsContainer.style.display = 'none'; 
-        loadingMsg.style.display = 'none';
-      } else {
-        isRadioMode = false;
-        radioBtn.classList.remove('active-radio');
-        radioBtn.textContent = '📻 即時廣播直播';
-        loopBtn.style.display = 'block';
-        playlistContainer.style.display = 'block';
-        tabsContainer.style.display = 'flex'; 
-        
-        if (playlistData.length > 0) {
-          const savedTime = parseFloat(localStorage.getItem(SAVED_TIME_KEY)) || 0;
-          loadTrack(currentIndex, savedTime);
-        }
-      }
-    });
-
+    // === 核心檔案讀取 ===
     async function fetchDriveFiles() {
-      const url = `https://www.googleapis.com/drive/v3/files?q='${FOLDER_ID}'+in+parents+and+trashed=false&fields=files(id,name,mimeType,size)&key=${API_KEY}`;
+      // 已加入 pageSize=1000 解決大量歌曲卡住問題
+      const url = `https://www.googleapis.com/drive/v3/files?q='${FOLDER_ID}'+in+parents+and+trashed=false&pageSize=1000&fields=files(id,name,mimeType,size)&key=${API_KEY}`;
       try {
         const response = await fetch(url);
         const data = await response.json();
         
         if (!data.files) {
-          loadingMsg.textContent = '無法讀取資料夾，請檢查 API Key 或權限。';
+          loadingMsg.textContent = '無法讀取資料夾，請檢查 API Key。';
           return;
         }
 
@@ -302,7 +382,6 @@
         playlistData = mp3Files.map(mp3 => {
           const baseName = mp3.name.substring(0, mp3.name.lastIndexOf('.'));
           const matchedLrc = lrcFiles.find(lrc => lrc.name.substring(0, lrc.name.lastIndexOf('.')) === baseName);
-          
           const sizeBytes = parseInt(mp3.size || '0', 10);
           const isLong = sizeBytes >= 14400000;
 
@@ -318,6 +397,7 @@
         if (playlistData.length > 0) {
           playlistContainer.style.display = 'block';
           tabsContainer.style.display = 'flex'; 
+          toggleLyricsBtn.style.display = 'block';
           renderPlaylist();
           
           let savedIndex = parseInt(localStorage.getItem(SAVED_INDEX_KEY)) || 0;
@@ -367,11 +447,9 @@
     }
 
     async function loadTrack(index, resumeTime = 0) {
-      if (isRadioMode) return;
       const track = playlistData[index];
       currentIndex = index;
       titleEl.textContent = track.title;
-      artistEl.textContent = 'MZG 馬子狗';
       
       audio.src = `https://www.googleapis.com/drive/v3/files/${track.id}?alt=media&key=${API_KEY}`;
       
@@ -406,8 +484,6 @@
     }
 
     audio.addEventListener('timeupdate', () => {
-      if (isRadioMode) return;
-
       localStorage.setItem(SAVED_INDEX_KEY, currentIndex);
       localStorage.setItem(SAVED_TIME_KEY, audio.currentTime);
 
@@ -429,53 +505,11 @@
       }
     });
 
-    // === 【重大更新】重新改寫的換歌邏輯 ===
-    audio.addEventListener('ended', () => {
-      if (isRadioMode) return;
-      
-      if (loopMode === 'single') {
-        audio.currentTime = 0;
-        audio.play();
-        return;
-      }
-
-      // 1. 先找出目前分類下，所有「符合條件的歌曲索引號碼」
-      const validIndices = [];
-      playlistData.forEach((track, index) => {
-        if (currentFilter === 'all') validIndices.push(index);
-        else if (currentFilter === 'short' && !track.isLong) validIndices.push(index);
-        else if (currentFilter === 'long' && track.isLong) validIndices.push(index);
-      });
-
-      if (validIndices.length === 0) return; // 防呆機制：如果該分類沒半首歌就不要動作
-
-      if (loopMode === 'shuffle') {
-        // 2. 隨機播放：只從符合目前分類的歌單裡面抽籤
-        const randomIdx = validIndices[Math.floor(Math.random() * validIndices.length)];
-        loadTrack(randomIdx);
-        audio.play();
-      } else {
-        // 3. 列表循環：找出下一首符合分類的歌
-        let currentPos = validIndices.indexOf(currentIndex);
-        
-        // 如果目前聽的歌剛好不在此分類 (例如聽一半突然切換頁籤)，就預設播該分類的第一首
-        let nextPos = 0;
-        if (currentPos !== -1) {
-          nextPos = (currentPos + 1) % validIndices.length;
-        }
-        
-        loadTrack(validIndices[nextPos]);
-        audio.play();
-      }
-    });
-    // ===================================
-
     function renderPlaylist() {
       playlistContainer.innerHTML = '';
       playlistData.forEach((track, index) => {
         const btn = document.createElement('button');
         btn.className = 'track-btn';
-        
         btn.dataset.isLong = track.isLong;
         
         const textSpan = document.createElement('span');
@@ -490,14 +524,6 @@
         }
 
         btn.onclick = () => { 
-          if (isRadioMode) {
-            isRadioMode = false;
-            radioBtn.classList.remove('active-radio');
-            radioBtn.textContent = '📻 即時廣播直播';
-            loopBtn.style.display = 'block';
-            playlistContainer.style.display = 'block';
-            tabsContainer.style.display = 'flex';
-          }
           loadTrack(index, 0); 
           audio.play(); 
         };
