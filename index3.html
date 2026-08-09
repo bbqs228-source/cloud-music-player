@@ -63,8 +63,8 @@ body.light{--bg:#f0f2f5;--card:#fff;--item:#e4e6eb;--panel:#f8f9fa;--muted:#666;
   <div class="traffic" id="trafficPanel">
     <div>📦 本首：<b id="trackSize">--</b></div>
     <div>🎧 品質：約 <b id="bitrate">--</b></div>
-    <div>▶️ 本次：<b id="sessionTraffic">0 MB</b></div>
-    <div>📅 今日：<b id="todayTraffic">0 MB</b></div>
+    <div>▶️ 本次：約 <b id="sessionTraffic">0 MB</b></div>
+    <div>📅 今日：約 <b id="todayTraffic">0 MB</b></div>
   </div>
 
   <audio id="audio" preload="metadata" playsinline></audio>
@@ -139,6 +139,7 @@ let lastSave=0,lastMediaUpdate=0;
 let sessionBytes=0;
 let todayBytes=0;
 let lastTrafficMediaTime=null;
+let lastTrafficWallTime=null;
 let trafficDate='';
 let trafficSaveAt=0;
 
@@ -155,7 +156,7 @@ let theme=localStorage.getItem(K.theme)||'dark';
 const indexKey=()=>`mzg_saved_track_index_${currentFolder}`;
 const idKey=()=>`mzg_saved_track_id_${currentFolder}`;
 const timeKey=()=>`mzg_saved_track_time_${currentFolder}`;
-const cacheKey=()=>`mzg_playlist_cache_${currentFolder}`;
+const cacheKey=()=>`mzg_playlist_cache_v2_${currentFolder}`;
 
 const trafficDateKey=()=>`mzg_traffic_date`;
 const trafficBytesKey=()=>`mzg_traffic_bytes`;
@@ -480,7 +481,11 @@ async function fetchDrive(force=false){
     if(cached){
       try{
         const arr=JSON.parse(cached);
-        if(Array.isArray(arr)&&arr.length){tracks=arr;setupUI('cache');return}
+        if(Array.isArray(arr)&&arr.length&&arr.every(x=>Number.isFinite(Number(x.sizeBytes))&&Number(x.sizeBytes)>0)){
+          tracks=arr.map(x=>({...x,sizeBytes:Number(x.sizeBytes)}));
+          setupUI('cache');
+          return;
+        }
       }catch(e){localStorage.removeItem(ck)}
     }
   }
@@ -606,7 +611,7 @@ async function loadTrack(index,resume=0){
   saveState();
 
   const track=tracks[index];
-  currentIndex=index;activeLyric=-1;parsedLyrics=[];lastTrafficMediaTime=null;updateTrafficUI();
+  currentIndex=index;activeLyric=-1;parsedLyrics=[];lastTrafficMediaTime=null;lastTrafficWallTime=null;updateTrafficUI();
   title.textContent=track.title;
   document.title=`${track.title}｜客家精神`;
   updatePlaylistUI();
@@ -620,6 +625,7 @@ async function loadTrack(index,resume=0){
   audio.addEventListener('loadedmetadata',()=>{
     if(token!==loadToken)return;
     duration.textContent=fmt(audio.duration);
+    updateTrafficUI();
     if(Number.isFinite(restore)&&restore>0&&Number.isFinite(audio.duration)&&restore<audio.duration-2){
       try{audio.currentTime=Math.min(restore,audio.duration-.25)}catch(e){}
     }
@@ -684,12 +690,15 @@ audio.ontimeupdate=()=>{
   }
 
   if(!audio.paused&&!isSeeking&&Number.isFinite(audio.currentTime)){
-    if(lastTrafficMediaTime!==null){
-      const delta=audio.currentTime-lastTrafficMediaTime;
-      if(delta>0)addTrafficEstimate(delta);
+    const wallNow=performance.now();
+    if(lastTrafficWallTime!==null){
+      const deltaWall=(wallNow-lastTrafficWallTime)/1000;
+      if(deltaWall>0&&deltaWall<=4)addTrafficEstimate(deltaWall);
     }
+    lastTrafficWallTime=wallNow;
     lastTrafficMediaTime=audio.currentTime;
   }else{
+    lastTrafficWallTime=null;
     lastTrafficMediaTime=audio.currentTime;
   }
 
