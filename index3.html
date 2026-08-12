@@ -33,11 +33,15 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 .nav{width:44px;height:44px;border:1px solid #555;border-radius:10px;background:var(--item);color:#fff;font-size:17px}.seek{font-size:13px;font-weight:700}
 #playBtn{width:54px;height:54px;border:0;border-radius:50%;background:var(--g);font-size:21px;font-weight:700}
 .mode{width:100%;min-height:42px;margin-bottom:14px;border:1px solid #555;border-radius:10px;background:var(--item);color:#fff;font-weight:700}
-.tabs{display:flex;gap:7px;margin-bottom:8px}.tab{flex:1;min-height:40px;border:1px solid #444;border-radius:9px;background:var(--item);color:#aaa;font-size:13px}.tab.active{background:var(--g);color:#000;border-color:var(--g);font-weight:700}
+.tabs{display:flex;gap:7px;margin-bottom:8px;flex-wrap:wrap}.tab{flex:1 1 calc(25% - 7px);min-height:40px;border:1px solid #444;border-radius:9px;background:var(--item);color:#aaa;font-size:13px}.tab.active{background:var(--g);color:#000;border-color:var(--g);font-weight:700}
 .status{color:var(--muted);font-size:15px;line-height:1.5;margin:20px 0}.small{color:#888;font-size:11px;text-align:left;margin:-5px 0 12px}
 .playlist{height:250px;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;background:var(--panel);border-radius:12px;padding:8px;margin-bottom:14px}
 .track{width:100%;min-height:48px;margin:4px 0;padding:13px;border:1px solid transparent;border-radius:10px;background:var(--item);color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left}
-.track.active{background:var(--g);color:#000;font-weight:700}.name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.badge{flex:none;padding:3px 7px;border-radius:999px;background:#ff9800;color:#000;font-size:11px;font-weight:700}
+.track.active{background:var(--g);color:#000;font-weight:700}.name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fav-btn{flex:none;width:38px;height:38px;border:0;border-radius:50%;background:transparent;color:#aaa;font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.fav-btn.active{color:#ff4d6d}
+body.light .fav-btn{color:#999}
+body.light .fav-btn.active{color:#e6395f}
+.badge{flex:none;padding:3px 7px;border-radius:999px;background:#ff9800;color:#000;font-size:11px;font-weight:700}
 .toggle{width:100%;min-height:42px;margin-bottom:8px;border:1px solid #555;border-radius:10px;background:var(--item);color:#fff}
 .lyrics{height:210px;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:none;background:var(--panel);border-radius:12px;padding:12px 0;transition:.3s}.lyrics::-webkit-scrollbar{display:none}.lyrics.hide{height:0;opacity:0;padding:0;pointer-events:none}
 .line{min-height:46px;padding:10px 14px;color:#ccc;font-size:19px;line-height:1.45;user-select:none;-webkit-user-select:none}.line.active{color:#1ed760;font-size:26px;font-weight:700}
@@ -95,6 +99,7 @@ body.light{--bg:#f0f2f5;--card:#fff;--item:#e4e6eb;--panel:#f8f9fa;--muted:#666;
     <button class="tab active" data-filter="all">全部</button>
     <button class="tab" data-filter="short">單曲</button>
     <button class="tab" data-filter="long">長篇</button>
+    <button class="tab" data-filter="favorite">♥ 最愛</button>
   </div>
 
   <div id="status" class="status">正在載入歌單，請稍候...</div>
@@ -157,6 +162,49 @@ const indexKey=()=>`mzg_saved_track_index_${currentFolder}`;
 const idKey=()=>`mzg_saved_track_id_${currentFolder}`;
 const timeKey=()=>`mzg_saved_track_time_${currentFolder}`;
 const cacheKey=()=>`mzg_playlist_cache_v2_${currentFolder}`;
+const FAVORITES_KEY='mzg_favorite_track_ids_v1';
+
+function loadFavoriteIds(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(FAVORITES_KEY)||'[]');
+    return new Set(Array.isArray(raw)?raw:[]);
+  }catch(e){
+    return new Set();
+  }
+}
+
+let favoriteIds=loadFavoriteIds();
+
+function saveFavoriteIds(){
+  try{
+    localStorage.setItem(FAVORITES_KEY,JSON.stringify([...favoriteIds]));
+  }catch(e){}
+}
+
+function isFavorite(track){
+  return !!track&&favoriteIds.has(track.id);
+}
+
+function toggleFavorite(index,event){
+  if(event){
+    event.stopPropagation();
+    event.preventDefault();
+  }
+
+  const track=tracks[index];
+  if(!track)return;
+
+  if(favoriteIds.has(track.id)){
+    favoriteIds.delete(track.id);
+  }else{
+    favoriteIds.add(track.id);
+  }
+
+  saveFavoriteIds();
+  renderPlaylist();
+  updatePlaylistUI();
+}
+
 
 const trafficDateKey=()=>`mzg_traffic_date`;
 const trafficBytesKey=()=>`mzg_traffic_bytes`;
@@ -392,14 +440,25 @@ document.querySelectorAll('.tab').forEach(btn=>btn.onclick=e=>{
 });
 
 function validIndices(){
-  return tracks.map((t,i)=>({t,i})).filter(({t})=>
-    currentFilter==='all'||(currentFilter==='short'&&!t.isLong)||(currentFilter==='long'&&t.isLong)
-  ).map(x=>x.i);
+  return tracks
+    .map((t,i)=>({t,i}))
+    .filter(({t})=>
+      currentFilter==='all' ||
+      (currentFilter==='short'&&!t.isLong) ||
+      (currentFilter==='long'&&t.isLong) ||
+      (currentFilter==='favorite'&&isFavorite(t))
+    )
+    .map(x=>x.i);
 }
 function applyFilter(){
   playlist.querySelectorAll('.track').forEach((b,i)=>{
     const t=tracks[i];
-    b.style.display=currentFilter==='all'||(currentFilter==='short'&&!t.isLong)||(currentFilter==='long'&&t.isLong)?'flex':'none';
+    const show=
+      currentFilter==='all' ||
+      (currentFilter==='short'&&!t.isLong) ||
+      (currentFilter==='long'&&t.isLong) ||
+      (currentFilter==='favorite'&&isFavorite(t));
+    b.style.display=show?'flex':'none';
   });
 }
 
@@ -773,6 +832,15 @@ function renderPlaylist(){
     const name=document.createElement('span');
     name.className='name';name.textContent=`${i+1}. ${t.title}`;
     b.appendChild(name);
+
+    const fav=document.createElement('button');
+    fav.className='fav-btn'+(isFavorite(t)?' active':'');
+    fav.type='button';
+    fav.title=isFavorite(t)?'取消最愛':'加入最愛';
+    fav.setAttribute('aria-label',fav.title);
+    fav.textContent=isFavorite(t)?'♥':'♡';
+    fav.onclick=e=>toggleFavorite(i,e);
+    b.appendChild(fav);
 
     if(t.isLong){
       const badge=document.createElement('span');
