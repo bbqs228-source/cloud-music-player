@@ -340,14 +340,36 @@ volume.oninput=e=>{
 };
 muteBtn.onclick=()=>{audio.muted=!audio.muted;muteIcon()};
 
-async function safePlay(){
-  try{await audio.play()}catch(e){console.log('Safari 尚未允許播放',e)}
+async function safePlay(markIntent=true){
+  if(markIntent)wantsPlayback=true;
+  try{
+    await audio.play();
+    return true;
+  }catch(e){
+    console.log('Safari 尚未允許播放',e);
+    return false;
+  }
 }
-playBtn.onclick=()=>audio.paused?safePlay():audio.pause();
+
+playBtn.onclick=()=>{
+  if(audio.paused){
+    wantsPlayback=true;
+    safePlay(false);
+  }else{
+    wantsPlayback=false;
+    clearRecovery();
+    audio.pause();
+  }
+};
+
 audio.onplay=()=>{
+  wantsPlayback=true;
+  recoveryAttempts=0;
+  clearRecovery();
   playBtn.textContent='⏸';
   try{navigator.mediaSession.playbackState='playing'}catch(e){}
 };
+
 audio.onpause=()=>{
   playBtn.textContent='▶';
   try{navigator.mediaSession.playbackState='paused'}catch(e){}
@@ -398,6 +420,7 @@ syncBtn.onclick=async()=>{
 function syncState(v){isSyncing=v;syncBtn.disabled=v;syncBtn.classList.toggle('spin',v)}
 
 function resetUI(){
+  wantsPlayback=false;clearRecovery();nextPreparedIndex=-1;nextPreparedUrl='';
   loadToken++;
   audio.pause();audio.removeAttribute('src');audio.load();
   title.textContent='載入中...';
@@ -462,9 +485,10 @@ function applyFilter(){
   });
 }
 
-async function nextTrack(){
-  const valid=validIndices();if(!valid.length)return;
-  let next;
+function computeNextIndex(){
+  const valid=validIndices();
+  if(!valid.length)return -1;
+
   if(loopMode==='shuffle'){
     shuffleQueue=shuffleQueue.filter(i=>valid.includes(i));
     if(!shuffleQueue.length){
@@ -473,16 +497,96 @@ async function nextTrack(){
         const j=Math.floor(Math.random()*(i+1));
         [shuffleQueue[i],shuffleQueue[j]]=[shuffleQueue[j],shuffleQueue[i]];
       }
-      if(shuffleQueue.length>1&&shuffleQueue[0]===currentIndex)shuffleQueue.push(shuffleQueue.shift());
+      if(shuffleQueue.length>1&&shuffleQueue[0]===currentIndex){
+        shuffleQueue.push(shuffleQueue.shift());
+      }
     }
+    return shuffleQueue[0] ?? -1;
+  }
+
+  const p=valid.indexOf(currentIndex);
+  return valid[p<0?0:(p+1)%valid.length];
+}
+
+function mediaUrlFor(track){
+  if(!track)return'';
+  const p=new URLSearchParams({alt:'media',key:API_KEY});
+  return `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(track.id)}?${p}`;
+}
+
+function prepareNextTrack(){
+  const idx=computeNextIndex();
+  if(idx<0||!tracks[idx])return;
+  nextPreparedIndex=idx;
+  nextPreparedUrl=mediaUrlFor(tracks[idx]);
+}
+
+function consumeNextIndex(){
+  const valid=validIndices();
+  if(!valid.length)return -1;
+
+  if(loopMode==='shuffle'){
+    const idx=(nextPreparedIndex>=0&&valid.includes(nextPreparedIndex))
+      ? nextPreparedIndex
+      : computeNextIndex();
+
     shuffleHistory.push(currentIndex);
     if(shuffleHistory.length>50)shuffleHistory.shift();
-    next=shuffleQueue.shift();
-  }else{
-    const p=valid.indexOf(currentIndex);
-    next=valid[p<0?0:(p+1)%valid.length];
+
+    const qpos=shuffleQueue.indexOf(idx);
+    if(qpos>=0)shuffleQueue.splice(qpos,1);
+    nextPreparedIndex=-1;
+    nextPreparedUrl='';
+    return idx;
   }
-  await loadTrack(next,0);await safePlay();
+
+  const idx=(nextPreparedIndex>=0&&valid.includes(nextPreparedIndex))
+    ? nextPreparedIndex
+    : computeNextIndex();
+  nextPreparedIndex=-1;
+  nextPreparedUrl='';
+  return idx;
+}
+
+function clearRecovery(){
+  if(recoveryTimer){
+    clearTimeout(recoveryTimer);
+    recoveryTimer=null;
+  }
+}
+
+function scheduleRecovery(){
+  clearRecovery();
+  if(!wantsPlayback)return;
+
+  recoveryTimer=setTimeout(async()=>{
+    if(!wantsPlayback)return;
+
+    // 若已正常播放，就不處理
+    if(!audio.paused && audio.readyState>=2)return;
+
+    if(recoveryAttempts>=2)return;
+    recoveryAttempts++;
+
+    try{
+      audio.load();
+      await safePlay(false);
+    }catch(e){}
+  },2200);
+}
+
+async function nextTrack(){
+  const next=consumeNextIndex();
+  if(next<0)return;
+
+  backgroundSwitching=document.hidden;
+  recoveryAttempts=0;
+
+  // 最重要：先換音訊、立即要求播放，不等待歌詞網路請求
+  await loadTrack(next,0,{deferLyrics:document.hidden,preparedUrl:nextPreparedUrl});
+  await safePlay(false);
+  scheduleRecovery();
+  backgroundSwitching=false;
 }
 
 async function prevTrack(){
@@ -504,8 +608,14 @@ async function prevTrack(){
 $('nextBtn').onclick=nextTrack;
 $('prevBtn').onclick=prevTrack;
 audio.onended=async()=>{
-  if(loopMode==='single'){audio.currentTime=0;await safePlay()}
-  else await nextTrack();
+  if(!wantsPlayback)return;
+  if(loopMode==='single'){
+    audio.currentTime=0;
+    await safePlay(false);
+    scheduleRecovery();
+  }else{
+    await nextTrack();
+  }
 };
 
 /* ===== 第 2 段請直接接在這一行下面 ===== */
@@ -664,19 +774,27 @@ function parseLRC(text){
   return out.sort((a,b)=>a.time-b.time);
 }
 
-async function loadTrack(index,resume=0){
+async function loadTrack(index,resume=0,options={}){
   if(!tracks[index])return;
   const token=++loadToken;
   saveState();
 
   const track=tracks[index];
-  currentIndex=index;activeLyric=-1;parsedLyrics=[];lastTrafficMediaTime=null;lastTrafficWallTime=null;updateTrafficUI();
+  currentIndex=index;
+  activeLyric=-1;
+  parsedLyrics=[];
+  lastTrafficMediaTime=null;
+  lastTrafficWallTime=null;
+  updateTrafficUI();
+
   title.textContent=track.title;
   document.title=`${track.title}｜客家精神`;
   updatePlaylistUI();
 
-  const p=new URLSearchParams({alt:'media',key:API_KEY});
-  audio.src=`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(track.id)}?${p}`;
+  const streamUrl=options.preparedUrl||mediaUrlFor(track);
+  audio.src=streamUrl;
+  audio.load();
+
   localStorage.setItem(idKey(),track.id);
   localStorage.setItem(indexKey(),index);
 
@@ -685,13 +803,30 @@ async function loadTrack(index,resume=0){
     if(token!==loadToken)return;
     duration.textContent=fmt(audio.duration);
     updateTrafficUI();
+
     if(Number.isFinite(restore)&&restore>0&&Number.isFinite(audio.duration)&&restore<audio.duration-2){
       try{audio.currentTime=Math.min(restore,audio.duration-.25)}catch(e){}
     }
+
     updateMediaPosition(true);
+    prepareNextTrack();
   },{once:true});
 
   updateMediaMetadata(track);
+
+  // 背景切歌時，不讓 LRC fetch 阻塞下一首播放。
+  if(options.deferLyrics){
+    lyrics.innerHTML='<div class="line">背景播放中，歌詞稍後載入...</div>';
+    setTimeout(async()=>{
+      if(token!==loadToken)return;
+      const l=await fetchLRC(track.lrcId);
+      if(token!==loadToken)return;
+      parsedLyrics=l;
+      renderLyrics();
+    },0);
+    return;
+  }
+
   lyrics.innerHTML='<div class="line">載入歌詞中...</div>';
   const l=await fetchLRC(track.lrcId);
   if(token!==loadToken)return;
@@ -699,7 +834,6 @@ async function loadTrack(index,resume=0){
   renderLyrics();
   updatePlaylistUI();
 }
-
 function renderLyrics(){
   lyrics.innerHTML='';
   if(!parsedLyrics.length){
@@ -744,6 +878,10 @@ function updateActiveLyric(force=false){
 
 audio.ontimeupdate=()=>{
   if(!isSeeking&&Number.isFinite(audio.duration)&&audio.duration>0){
+    const remaining=audio.duration-audio.currentTime;
+    if(remaining<=12 && remaining>0 && nextPreparedIndex<0 && loopMode!=='single'){
+      prepareNextTrack();
+    }
     now.textContent=fmt(audio.currentTime);
     progress.value=audio.currentTime/audio.duration*100;
   }
@@ -768,6 +906,22 @@ audio.ontimeupdate=()=>{
   if(n-lastMediaUpdate>=3000){updateMediaPosition();lastMediaUpdate=n}
 };
 
+
+audio.addEventListener('waiting',()=>{
+  if(wantsPlayback)scheduleRecovery();
+});
+audio.addEventListener('stalled',()=>{
+  if(wantsPlayback)scheduleRecovery();
+});
+audio.addEventListener('error',()=>{
+  if(wantsPlayback)scheduleRecovery();
+});
+audio.addEventListener('canplay',()=>{
+  if(wantsPlayback&&audio.paused&&backgroundSwitching){
+    safePlay(false);
+  }
+});
+
 function saveState(){
   try{
     localStorage.setItem(trafficDateKey(),trafficDate||localDateString());
@@ -781,7 +935,27 @@ function saveState(){
   }catch(e){}
 }
 window.addEventListener('pagehide',saveState);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)saveState()});
+document.addEventListener('visibilitychange',async()=>{
+  if(document.hidden){
+    saveState();
+    return;
+  }
+
+  // 從導航 / 鎖定畫面回到播放器時，若原本應該播放卻停住，嘗試恢復
+  if(wantsPlayback&&audio.paused&&tracks[currentIndex]){
+    await safePlay(false);
+  }
+
+  // 回到前景後補抓目前歌詞
+  if(tracks[currentIndex]&&parsedLyrics.length===0){
+    const token=loadToken;
+    const l=await fetchLRC(tracks[currentIndex].lrcId);
+    if(token===loadToken){
+      parsedLyrics=l;
+      renderLyrics();
+    }
+  }
+});
 
 function updateMediaMetadata(track){
   if(!('mediaSession'in navigator)||!('MediaMetadata'in window))return;
@@ -810,7 +984,7 @@ function mediaAction(name,fn){
   try{navigator.mediaSession.setActionHandler(name,fn)}catch(e){}
 }
 mediaAction('play',safePlay);
-mediaAction('pause',()=>audio.pause());
+mediaAction('pause',()=>{wantsPlayback=false;clearRecovery();audio.pause()});
 mediaAction('previoustrack',prevTrack);
 mediaAction('nexttrack',nextTrack);
 mediaAction('seekbackward',d=>seekBy(-(d.seekOffset||15)));
