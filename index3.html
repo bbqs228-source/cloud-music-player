@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="客家精神">
 <title>客家精神雲端音樂播放器</title>
+<!-- iPhone playback control fix v3 -->
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -36,7 +37,12 @@ input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:6px;bord
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--g)}
 .mainbar{display:grid;grid-template-columns:44px 44px 54px 44px 44px;justify-content:space-between;align-items:center;gap:5px;margin-bottom:10px}
 .nav{width:44px;height:44px;border:1px solid #555;border-radius:10px;background:var(--item);color:#fff;font-size:17px}.seek{font-size:13px;font-weight:700}
-#playBtn{width:54px;height:54px;border:0;border-radius:50%;background:var(--g);font-size:21px;font-weight:700}
+#playBtn{
+  position:relative;z-index:5;width:54px;height:54px;border:0;border-radius:50%;
+  background:var(--g);font-size:21px;font-weight:700;cursor:pointer;
+  touch-action:manipulation;pointer-events:auto;-webkit-user-select:none;user-select:none
+}
+#playBtn:active{transform:scale(.94)}
 .mode{width:100%;min-height:42px;margin-bottom:14px;border:1px solid #555;border-radius:10px;background:var(--item);color:#fff;font-weight:700}
 .tabs{display:flex;gap:7px;margin-bottom:8px;flex-wrap:wrap}.tab{flex:1 1 calc(25% - 7px);min-height:40px;border:1px solid #444;border-radius:9px;background:var(--item);color:#aaa;font-size:13px}.tab.active{background:var(--g);color:#000;border-color:var(--g);font-weight:700}
 .status{color:var(--muted);font-size:15px;line-height:1.5;margin:20px 0}.small{color:#888;font-size:11px;text-align:left;margin:-5px 0 12px}
@@ -96,7 +102,7 @@ body.light{--bg:#f0f2f5;--card:#fff;--item:#e4e6eb;--panel:#f8f9fa;--muted:#666;
   <div class="mainbar">
     <button id="prevBtn" class="nav">⏮</button>
     <button id="backBtn" class="nav seek">↶15</button>
-    <button id="playBtn">▶</button>
+    <button id="playBtn" type="button">▶</button>
     <button id="forwardBtn" class="nav seek">15↷</button>
     <button id="nextBtn" class="nav">⏭</button>
   </div>
@@ -358,15 +364,33 @@ volume.oninput=e=>{
 };
 muteBtn.onclick=()=>{audio.muted=!audio.muted;muteIcon()};
 
-async function safePlay(fromUser=false){
+async function safePlay(fromUser=false,intentVersion=null){
   if(fromUser){
     manualPause=false;
     shouldContinuePlayback=true;
+    playbackIntentVersion++;
+    intentVersion=playbackIntentVersion;
   }
+
+  if(intentVersion===null)intentVersion=playbackIntentVersion;
+
+  // 發出 play 前再確認一次，不讓舊的背景救援覆蓋手動暫停
+  if(manualPause || !shouldContinuePlayback)return false;
 
   try{
     const promise=audio.play();
     if(promise&&typeof promise.then==='function')await promise;
+
+    // play() 非同步完成時，若使用者已在期間按了暫停，立即再停掉
+    if(
+      intentVersion!==playbackIntentVersion ||
+      manualPause ||
+      !shouldContinuePlayback
+    ){
+      audio.pause();
+      return false;
+    }
+
     return true;
   }catch(e){
     console.log('Safari 播放未成功',e);
@@ -377,26 +401,51 @@ async function safePlay(fromUser=false){
 function userPlay(){
   manualPause=false;
   shouldContinuePlayback=true;
+  playbackIntentVersion++;
+  const version=playbackIntentVersion;
   clearRecovery();
-  safePlay(true);
+  recoveryAttempts=0;
+  safePlay(false,version);
 }
 
 function userPause(){
+  // 先改狀態和代數，再 pause；任何舊的 async play 完成後都會被判定失效
   manualPause=true;
   shouldContinuePlayback=false;
+  playbackIntentVersion++;
   clearRecovery();
   recoveryAttempts=0;
-  audio.pause();
+
+  try{audio.pause()}catch(e){}
   playBtn.textContent='▶';
+
+  try{
+    if('mediaSession' in navigator){
+      navigator.mediaSession.playbackState='paused';
+    }
+  }catch(e){}
 }
 
-playBtn.onclick=()=>{
+function handlePlayButtonTap(e){
+  if(e){
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  const t=Date.now();
+  if(t-lastPlayButtonTap<250)return;
+  lastPlayButtonTap=t;
+
   if(audio.paused){
     userPlay();
   }else{
     userPause();
   }
-};
+}
+
+// 用 addEventListener，不再依賴 onclick 屬性
+playBtn.onclick=null;
+playBtn.addEventListener('click',handlePlayButtonTap,{passive:false});
 
 audio.onplay=()=>{
   if(!manualPause)shouldContinuePlayback=true;
@@ -407,6 +456,7 @@ audio.onplay=()=>{
 };
 
 audio.onpause=()=>{
+  if(manualPause)clearRecovery();
   playBtn.textContent='▶';
   try{navigator.mediaSession.playbackState='paused'}catch(e){}
 };
@@ -611,16 +661,24 @@ function scheduleRecovery(delay=1800){
     if(recoveryAttempts>=2)return;
     recoveryAttempts++;
 
-    // 第一次只再 play，不重新 load，避免 iOS 背景重置 media session
-    let ok=await safePlay(false);
+    const version=playbackIntentVersion;
 
-    // 第二次仍失敗，才重設同一個 src 再嘗試一次
-    if(!ok && recoveryAttempts<2 && !manualPause && shouldContinuePlayback){
+    // 第一次只再 play，不重新 load，避免 iOS 背景重置 media session
+    let ok=await safePlay(false,version);
+
+    // 第二次仍失敗，才重設同一個 src；若期間手動暫停，代數會不同而立即停止
+    if(
+      !ok &&
+      recoveryAttempts<2 &&
+      !manualPause &&
+      shouldContinuePlayback &&
+      version===playbackIntentVersion
+    ){
       const sameSrc=audio.currentSrc||audio.src;
       if(sameSrc){
         try{
           audio.src=sameSrc;
-          ok=await safePlay(false);
+          ok=await safePlay(false,version);
         }catch(e){}
       }
     }
@@ -637,6 +695,7 @@ async function nextTrack(){
 
   manualPause=false;
   shouldContinuePlayback=true;
+  playbackIntentVersion++;
   backgroundSwitching=document.hidden;
   recoveryAttempts=0;
   clearRecovery();
@@ -676,8 +735,9 @@ audio.onended=async()=>{
 
   if(loopMode==='single'){
     audio.currentTime=0;
-    const ok=await safePlay(false);
-    if(!ok)scheduleRecovery();
+    const version=playbackIntentVersion;
+    const ok=await safePlay(false,version);
+    if(!ok && version===playbackIntentVersion && !manualPause)scheduleRecovery();
   }else{
     await nextTrack();
   }
@@ -890,9 +950,18 @@ async function loadTrack(index,resume=0,options={}){
 
   // 背景連播：src 設定完馬上要求播放，不等待 metadata / LRC
   if(options.immediatePlayback && !manualPause && shouldContinuePlayback){
-    const ok=await safePlay(false);
-    if(!ok)scheduleRecovery(1200);
-    else scheduleRecovery(1800);
+    const version=playbackIntentVersion;
+    const ok=await safePlay(false,version);
+
+    // 使用者若在 play() 等待期間按暫停，就不要排任何背景救援
+    if(
+      version===playbackIntentVersion &&
+      !manualPause &&
+      shouldContinuePlayback
+    ){
+      if(!ok)scheduleRecovery(1200);
+      else scheduleRecovery(1800);
+    }
   }
 
   // 歌詞永遠不阻塞音樂
@@ -999,7 +1068,7 @@ audio.addEventListener('error',()=>{
 });
 audio.addEventListener('canplay',()=>{
   if(!manualPause&&shouldContinuePlayback&&audio.paused&&backgroundSwitching){
-    safePlay(false);
+    safePlay(false,playbackIntentVersion);
   }
 });
 
@@ -1024,8 +1093,9 @@ document.addEventListener('visibilitychange',async()=>{
 
   // 從導航 / 鎖定畫面回到播放器時，若原本應該播放卻停住，嘗試恢復
   if(!manualPause&&shouldContinuePlayback&&audio.paused&&tracks[currentIndex]){
-    const ok=await safePlay(false);
-    if(!ok)scheduleRecovery();
+    const version=playbackIntentVersion;
+    const ok=await safePlay(false,version);
+    if(!ok && version===playbackIntentVersion && !manualPause)scheduleRecovery();
   }
 
   // 回到前景後補抓目前歌詞
