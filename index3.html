@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="客家精神">
 <title>客家精神雲端音樂播放器</title>
-<!-- iPhone playback control fix v4: native iOS lock-screen play/pause -->
+<!-- iPhone playback control fix v4.1: missing state declarations fixed -->
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -150,6 +150,18 @@ sessionTraffic=$('sessionTraffic'),todayTraffic=$('todayTraffic'),nowFavBtn=$('n
 let tracks=[],currentIndex=0,currentFilter='all',parsedLyrics=[],activeLyric=-1;
 let shuffleQueue=[],shuffleHistory=[],loadToken=0,isSeeking=false,isSyncing=false;
 let lastSave=0,lastMediaUpdate=0;
+
+/* ===== iPhone 播放控制狀態 ===== */
+let manualPause=false;
+let shouldContinuePlayback=false;
+let playbackIntentVersion=0;
+let backgroundSwitching=false;
+let recoveryTimer=null;
+let recoveryAttempts=0;
+let nextPreparedIndex=-1;
+let nextPreparedUrl='';
+let lastPlayButtonTap=0;
+
 
 /* ===== 流量估算 =====
    注意：這是依「檔案大小 ÷ 歌曲長度 × 實際播放秒數」估算，
