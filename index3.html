@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="客家精神">
 <title>客家精神雲端音樂播放器</title>
-<!-- iPhone playback control fix v3 -->
+<!-- iPhone playback control fix v4: native iOS lock-screen play/pause -->
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -448,7 +448,9 @@ playBtn.onclick=null;
 playBtn.addEventListener('click',handlePlayButtonTap,{passive:false});
 
 audio.onplay=()=>{
-  if(!manualPause)shouldContinuePlayback=true;
+  // iOS 原生鎖定畫面按 Play 時，真正 audio 進入 playing 後同步狀態。
+  manualPause=false;
+  shouldContinuePlayback=true;
   recoveryAttempts=0;
   clearRecovery();
   playBtn.textContent='⏸';
@@ -456,7 +458,19 @@ audio.onplay=()=>{
 };
 
 audio.onpause=()=>{
-  if(manualPause)clearRecovery();
+  // 在 iOS 鎖定畫面使用原生 pause 時，JS 不一定先走 userPause()。
+  // 只要真正的 <audio> 進入 paused，就立即停止所有自動救援，
+  // 避免下一個 timer 又把它播放起來。
+  if(isIOS){
+    manualPause=true;
+    shouldContinuePlayback=false;
+    playbackIntentVersion++;
+    clearRecovery();
+    recoveryAttempts=0;
+  }else if(manualPause){
+    clearRecovery();
+  }
+
   playBtn.textContent='▶';
   try{navigator.mediaSession.playbackState='paused'}catch(e){}
 };
@@ -1135,8 +1149,17 @@ function mediaAction(name,fn){
   if(!('mediaSession'in navigator))return;
   try{navigator.mediaSession.setActionHandler(name,fn)}catch(e){}
 }
-mediaAction('play',()=>userPlay());
-mediaAction('pause',()=>userPause());
+// iPhone / iPad：不要攔截鎖定畫面的 play / pause。
+// 讓 WebKit 直接控制真正的 <audio>，避免背景 JS handler 被凍結時
+// 鎖定畫面只換圖示、實際音訊卻沒有停止。
+if(isIOS && 'mediaSession' in navigator){
+  try{navigator.mediaSession.setActionHandler('play',null)}catch(e){}
+  try{navigator.mediaSession.setActionHandler('pause',null)}catch(e){}
+}else{
+  mediaAction('play',()=>userPlay());
+  mediaAction('pause',()=>userPause());
+}
+
 mediaAction('previoustrack',prevTrack);
 mediaAction('nexttrack',nextTrack);
 mediaAction('seekbackward',d=>seekBy(-(d.seekOffset||15)));
