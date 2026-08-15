@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="客家精神">
 <title>客家精神雲端音樂播放器</title>
-<!-- iPhone playback control fix v4.1: missing state declarations fixed -->
+<!-- iPhone playback control fix v4.2: autoplay-next fixed -->
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -161,6 +161,7 @@ let recoveryAttempts=0;
 let nextPreparedIndex=-1;
 let nextPreparedUrl='';
 let lastPlayButtonTap=0;
+let endFallbackTriggered=false;
 
 
 /* ===== 流量估算 =====
@@ -470,17 +471,12 @@ audio.onplay=()=>{
 };
 
 audio.onpause=()=>{
-  // 在 iOS 鎖定畫面使用原生 pause 時，JS 不一定先走 userPause()。
-  // 只要真正的 <audio> 進入 paused，就立即停止所有自動救援，
-  // 避免下一個 timer 又把它播放起來。
-  if(isIOS){
-    manualPause=true;
-    shouldContinuePlayback=false;
-    playbackIntentVersion++;
+  // iOS 在歌曲自然播完、換 src、背景 interruption 時也可能觸發 pause。
+  // 這裡只更新 UI，不把它當成使用者手動暫停。
+  // 真正的手動暫停只由 userPause() 負責。
+  if(manualPause){
     clearRecovery();
     recoveryAttempts=0;
-  }else if(manualPause){
-    clearRecovery();
   }
 
   playBtn.textContent='▶';
@@ -719,6 +715,7 @@ async function nextTrack(){
   const next=consumeNextIndex();
   if(next<0||!tracks[next])return;
 
+  // 自動切下一首屬於持續播放，不是新的使用者操作。
   manualPause=false;
   shouldContinuePlayback=true;
   playbackIntentVersion++;
@@ -757,16 +754,22 @@ async function prevTrack(){
 $('nextBtn').onclick=nextTrack;
 $('prevBtn').onclick=prevTrack;
 audio.onended=async()=>{
-  if(manualPause||!shouldContinuePlayback)return;
+  // 自然播完時，只要不是使用者明確按暫停，就一定要繼續。
+  if(manualPause)return;
+
+  shouldContinuePlayback=true;
 
   if(loopMode==='single'){
     audio.currentTime=0;
     const version=playbackIntentVersion;
     const ok=await safePlay(false,version);
-    if(!ok && version===playbackIntentVersion && !manualPause)scheduleRecovery();
-  }else{
-    await nextTrack();
+    if(!ok && version===playbackIntentVersion && !manualPause){
+      scheduleRecovery();
+    }
+    return;
   }
+
+  await nextTrack();
 };
 
 /* ===== 第 2 段請直接接在這一行下面 ===== */
@@ -933,6 +936,7 @@ async function loadTrack(index,resume=0,options={}){
 
   const track=tracks[index];
   currentIndex=index;
+  endFallbackTriggered=false;
   activeLyric=-1;
   parsedLyrics=[];
   lastTrafficMediaTime=null;
@@ -1055,8 +1059,30 @@ function updateActiveLyric(force=false){
 audio.ontimeupdate=()=>{
   if(!isSeeking&&Number.isFinite(audio.duration)&&audio.duration>0){
     const remaining=audio.duration-audio.currentTime;
+
     if(remaining<=12 && remaining>0 && nextPreparedIndex<0 && loopMode!=='single'){
       prepareNextTrack();
+    }
+
+    // iOS 背景偶爾不送 ended；剩不到 0.35 秒時做一次保險切歌。
+    if(
+      remaining<=0.35 &&
+      remaining>=0 &&
+      !endFallbackTriggered &&
+      !manualPause &&
+      shouldContinuePlayback &&
+      loopMode!=='single'
+    ){
+      endFallbackTriggered=true;
+      setTimeout(()=>{
+        if(
+          !manualPause &&
+          shouldContinuePlayback &&
+          (audio.ended || (Number.isFinite(audio.duration) && audio.duration-audio.currentTime<=0.5))
+        ){
+          nextTrack();
+        }
+      },180);
     }
     now.textContent=fmt(audio.currentTime);
     progress.value=audio.currentTime/audio.duration*100;
