@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="客家精神">
 <title>客家精神雲端音樂播放器</title>
-<!-- iPhone playback control fix v4.3: simple direct playback controls -->
+<!-- iPhone playback control fix v4.4: synchronous track switching -->
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -659,25 +659,80 @@ function scheduleRecovery(delay=1800){
   },delay);
 }
 
-async function nextTrack(){
-  const next=consumeNextIndex();
-  if(next<0||!tracks[next])return;
 
+function switchTrackAndPlay(index, options={}){
+  if(!tracks[index])return;
+
+  const token=++loadToken;
+  saveState();
+
+  const track=tracks[index];
+  currentIndex=index;
+  endFallbackTriggered=false;
+  activeLyric=-1;
+  parsedLyrics=[];
+  lastTrafficMediaTime=null;
+  lastTrafficWallTime=null;
   manualPause=false;
   shouldContinuePlayback=true;
   recoveryAttempts=0;
   clearRecovery();
 
-  await loadTrack(next,0,{deferLyrics:document.hidden});
+  title.textContent=track.title;
+  document.title=`${track.title}｜客家精神`;
+  updatePlaylistUI();
+  updateTrafficUI();
 
-  try{
-    await audio.play();
-  }catch(e){
-    scheduleRecovery(1400);
+  const streamUrl=mediaUrlFor(track);
+
+  // iOS 關鍵：換 src 後立即呼叫 play()。
+  audio.src=streamUrl;
+
+  localStorage.setItem(idKey(),track.id);
+  localStorage.setItem(indexKey(),index);
+
+  audio.addEventListener('loadedmetadata',()=>{
+    if(token!==loadToken)return;
+
+    duration.textContent=fmt(audio.duration);
+    updateTrafficUI();
+    updateMediaPosition(true);
+    prepareNextTrack();
+  },{once:true});
+
+  updateMediaMetadata(track);
+
+  const playPromise=audio.play();
+  if(playPromise&&typeof playPromise.catch==='function'){
+    playPromise.catch(e=>{
+      console.log('切歌後播放失敗',e);
+      if(!manualPause&&shouldContinuePlayback){
+        scheduleRecovery(1200);
+      }
+    });
   }
+
+  // 音訊已要求播放後才處理歌詞。
+  lyrics.innerHTML=document.hidden
+    ? '<div class="line">背景播放中，歌詞稍後載入...</div>'
+    : '<div class="line">載入歌詞中...</div>';
+
+  setTimeout(async()=>{
+    const l=await fetchLRC(track.lrcId);
+    if(token!==loadToken)return;
+    parsedLyrics=l;
+    renderLyrics();
+    updatePlaylistUI();
+  },50);
 }
 
-async function prevTrack(){
+function nextTrack(){
+  const next=consumeNextIndex();
+  if(next<0||!tracks[next])return;
+  switchTrackAndPlay(next,{reason:'next'});
+}
+
+function prevTrack(){
   const valid=validIndices();
   if(!valid.length)return;
 
@@ -695,20 +750,12 @@ async function prevTrack(){
     prev=valid[p<0?0:(p-1+valid.length)%valid.length];
   }
 
-  manualPause=false;
-  shouldContinuePlayback=true;
-
-  await loadTrack(prev,0,{deferLyrics:document.hidden});
-
-  try{
-    await audio.play();
-  }catch(e){
-    scheduleRecovery(1400);
-  }
+  switchTrackAndPlay(prev,{reason:'prev'});
 }
-$('nextBtn').onclick=nextTrack;
-$('prevBtn').onclick=prevTrack;
-audio.onended=async()=>{
+
+$('nextBtn').onclick=()=>nextTrack();
+$('prevBtn').onclick=()=>prevTrack();
+audio.onended=()=>{
   if(manualPause)return;
 
   shouldContinuePlayback=true;
@@ -716,13 +763,17 @@ audio.onended=async()=>{
   if(loopMode==='single'){
     try{
       audio.currentTime=0;
-      await audio.play();
+      const p=audio.play();
+      if(p&&typeof p.catch==='function'){
+        p.catch(()=>scheduleRecovery(1200));
+      }
     }catch(e){
-      scheduleRecovery(1400);
+      scheduleRecovery(1200);
     }
-  }else{
-    await nextTrack();
+    return;
   }
+
+  nextTrack();
 };
 
 /* ===== 第 2 段請直接接在這一行下面 ===== */
@@ -1171,10 +1222,10 @@ function renderPlaylist(){
       b.appendChild(badge);
     }
 
-    b.onclick=async()=>{
+    b.onclick=()=>{
       if(i===currentIndex&&audio.src){
         if(audio.paused || audio.ended){
-          await directPlay();
+          directPlay();
         }else{
           directPause();
         }
@@ -1186,16 +1237,7 @@ function renderPlaylist(){
         if(shuffleHistory.length>50)shuffleHistory.shift();
       }
 
-      manualPause=false;
-      shouldContinuePlayback=true;
-
-      await loadTrack(i,0,{deferLyrics:document.hidden});
-
-      try{
-        await audio.play();
-      }catch(e){
-        console.log('點歌播放失敗',e);
-      }
+      switchTrackAndPlay(i,{reason:'playlist'});
     };
     frag.appendChild(b);
   });
