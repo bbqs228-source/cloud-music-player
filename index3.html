@@ -8,6 +8,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="客家精神">
 <title>客家精神雲端音樂播放器</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{--g:#1db954;--bg:#121212;--card:#1e1e1e;--item:#2a2a2a;--panel:#181818;--muted:#aaa}
@@ -353,30 +358,48 @@ volume.oninput=e=>{
 };
 muteBtn.onclick=()=>{audio.muted=!audio.muted;muteIcon()};
 
-async function safePlay(markIntent=true){
-  if(markIntent)wantsPlayback=true;
+async function safePlay(fromUser=false){
+  if(fromUser){
+    manualPause=false;
+    shouldContinuePlayback=true;
+  }
+
   try{
-    await audio.play();
+    const promise=audio.play();
+    if(promise&&typeof promise.then==='function')await promise;
     return true;
   }catch(e){
-    console.log('Safari 尚未允許播放',e);
+    console.log('Safari 播放未成功',e);
     return false;
   }
 }
 
+function userPlay(){
+  manualPause=false;
+  shouldContinuePlayback=true;
+  clearRecovery();
+  safePlay(true);
+}
+
+function userPause(){
+  manualPause=true;
+  shouldContinuePlayback=false;
+  clearRecovery();
+  recoveryAttempts=0;
+  audio.pause();
+  playBtn.textContent='▶';
+}
+
 playBtn.onclick=()=>{
   if(audio.paused){
-    wantsPlayback=true;
-    safePlay(false);
+    userPlay();
   }else{
-    wantsPlayback=false;
-    clearRecovery();
-    audio.pause();
+    userPause();
   }
 };
 
 audio.onplay=()=>{
-  wantsPlayback=true;
+  if(!manualPause)shouldContinuePlayback=true;
   recoveryAttempts=0;
   clearRecovery();
   playBtn.textContent='⏸';
@@ -387,6 +410,7 @@ audio.onpause=()=>{
   playBtn.textContent='▶';
   try{navigator.mediaSession.playbackState='paused'}catch(e){}
 };
+
 audio.onloadedmetadata=()=>{
   duration.textContent=fmt(audio.duration);
   lastTrafficMediaTime=audio.currentTime;
@@ -433,7 +457,7 @@ syncBtn.onclick=async()=>{
 function syncState(v){isSyncing=v;syncBtn.disabled=v;syncBtn.classList.toggle('spin',v)}
 
 function resetUI(){
-  wantsPlayback=false;clearRecovery();nextPreparedIndex=-1;nextPreparedUrl='';
+  shouldContinuePlayback=false;manualPause=false;clearRecovery();nextPreparedIndex=-1;nextPreparedUrl='';
   loadToken++;
   audio.pause();audio.removeAttribute('src');audio.load();
   title.textContent='載入中...';
@@ -573,37 +597,57 @@ function clearRecovery(){
   }
 }
 
-function scheduleRecovery(){
+function scheduleRecovery(delay=1800){
   clearRecovery();
-  if(!wantsPlayback)return;
+
+  if(manualPause||!shouldContinuePlayback)return;
 
   recoveryTimer=setTimeout(async()=>{
-    if(!wantsPlayback)return;
+    if(manualPause||!shouldContinuePlayback)return;
 
-    // 若已正常播放，就不處理
+    // 已經正常播放就不干預
     if(!audio.paused && audio.readyState>=2)return;
 
     if(recoveryAttempts>=2)return;
     recoveryAttempts++;
 
-    try{
-      audio.load();
-      await safePlay(false);
-    }catch(e){}
-  },2200);
+    // 第一次只再 play，不重新 load，避免 iOS 背景重置 media session
+    let ok=await safePlay(false);
+
+    // 第二次仍失敗，才重設同一個 src 再嘗試一次
+    if(!ok && recoveryAttempts<2 && !manualPause && shouldContinuePlayback){
+      const sameSrc=audio.currentSrc||audio.src;
+      if(sameSrc){
+        try{
+          audio.src=sameSrc;
+          ok=await safePlay(false);
+        }catch(e){}
+      }
+    }
+
+    if(!ok && recoveryAttempts<2){
+      scheduleRecovery(2200);
+    }
+  },delay);
 }
 
 async function nextTrack(){
   const next=consumeNextIndex();
-  if(next<0)return;
+  if(next<0||!tracks[next])return;
 
+  manualPause=false;
+  shouldContinuePlayback=true;
   backgroundSwitching=document.hidden;
   recoveryAttempts=0;
+  clearRecovery();
 
-  // 最重要：先換音訊、立即要求播放，不等待歌詞網路請求
-  await loadTrack(next,0,{deferLyrics:document.hidden,preparedUrl:nextPreparedUrl});
-  await safePlay(false);
-  scheduleRecovery();
+  // 背景切歌的關鍵：換 src 後立刻 play，不先 audio.load()、不等歌詞
+  await loadTrack(next,0,{
+    deferLyrics:true,
+    preparedUrl:nextPreparedUrl,
+    immediatePlayback:true
+  });
+
   backgroundSwitching=false;
 }
 
@@ -621,16 +665,19 @@ async function prevTrack(){
     const p=valid.indexOf(currentIndex);
     prev=valid[p<0?0:(p-1+valid.length)%valid.length];
   }
-  await loadTrack(prev,0);await safePlay();
+  manualPause=false;
+  shouldContinuePlayback=true;
+  await loadTrack(prev,0,{deferLyrics:document.hidden,immediatePlayback:true});
 }
 $('nextBtn').onclick=nextTrack;
 $('prevBtn').onclick=prevTrack;
 audio.onended=async()=>{
-  if(!wantsPlayback)return;
+  if(manualPause||!shouldContinuePlayback)return;
+
   if(loopMode==='single'){
     audio.currentTime=0;
-    await safePlay(false);
-    scheduleRecovery();
+    const ok=await safePlay(false);
+    if(!ok)scheduleRecovery();
   }else{
     await nextTrack();
   }
@@ -794,6 +841,7 @@ function parseLRC(text){
 
 async function loadTrack(index,resume=0,options={}){
   if(!tracks[index])return;
+
   const token=++loadToken;
   saveState();
 
@@ -810,19 +858,27 @@ async function loadTrack(index,resume=0,options={}){
   updatePlaylistUI();
 
   const streamUrl=options.preparedUrl||mediaUrlFor(track);
+
+  // 設 src 本身已會觸發媒體載入；iOS 背景時不要再額外 audio.load()
   audio.src=streamUrl;
-  audio.load();
 
   localStorage.setItem(idKey(),track.id);
   localStorage.setItem(indexKey(),index);
 
   const restore=Number(resume);
+
   audio.addEventListener('loadedmetadata',()=>{
     if(token!==loadToken)return;
+
     duration.textContent=fmt(audio.duration);
     updateTrafficUI();
 
-    if(Number.isFinite(restore)&&restore>0&&Number.isFinite(audio.duration)&&restore<audio.duration-2){
+    if(
+      Number.isFinite(restore)&&
+      restore>0&&
+      Number.isFinite(audio.duration)&&
+      restore<audio.duration-2
+    ){
       try{audio.currentTime=Math.min(restore,audio.duration-.25)}catch(e){}
     }
 
@@ -832,25 +888,32 @@ async function loadTrack(index,resume=0,options={}){
 
   updateMediaMetadata(track);
 
-  // 背景切歌時，不讓 LRC fetch 阻塞下一首播放。
+  // 背景連播：src 設定完馬上要求播放，不等待 metadata / LRC
+  if(options.immediatePlayback && !manualPause && shouldContinuePlayback){
+    const ok=await safePlay(false);
+    if(!ok)scheduleRecovery(1200);
+    else scheduleRecovery(1800);
+  }
+
+  // 歌詞永遠不阻塞音樂
+  lyrics.innerHTML=options.deferLyrics
+    ? '<div class="line">背景播放中，歌詞稍後載入...</div>'
+    : '<div class="line">載入歌詞中...</div>';
+
+  const loadLyricsLater=async()=>{
+    const l=await fetchLRC(track.lrcId);
+    if(token!==loadToken)return;
+    parsedLyrics=l;
+    renderLyrics();
+    updatePlaylistUI();
+  };
+
   if(options.deferLyrics){
-    lyrics.innerHTML='<div class="line">背景播放中，歌詞稍後載入...</div>';
-    setTimeout(async()=>{
-      if(token!==loadToken)return;
-      const l=await fetchLRC(track.lrcId);
-      if(token!==loadToken)return;
-      parsedLyrics=l;
-      renderLyrics();
-    },0);
+    setTimeout(loadLyricsLater,50);
     return;
   }
 
-  lyrics.innerHTML='<div class="line">載入歌詞中...</div>';
-  const l=await fetchLRC(track.lrcId);
-  if(token!==loadToken)return;
-  parsedLyrics=l;
-  renderLyrics();
-  updatePlaylistUI();
+  await loadLyricsLater();
 }
 function renderLyrics(){
   lyrics.innerHTML='';
@@ -926,16 +989,16 @@ audio.ontimeupdate=()=>{
 
 
 audio.addEventListener('waiting',()=>{
-  if(wantsPlayback)scheduleRecovery();
+  if(!manualPause&&shouldContinuePlayback)scheduleRecovery();
 });
 audio.addEventListener('stalled',()=>{
-  if(wantsPlayback)scheduleRecovery();
+  if(!manualPause&&shouldContinuePlayback)scheduleRecovery();
 });
 audio.addEventListener('error',()=>{
-  if(wantsPlayback)scheduleRecovery();
+  if(!manualPause&&shouldContinuePlayback)scheduleRecovery(1200);
 });
 audio.addEventListener('canplay',()=>{
-  if(wantsPlayback&&audio.paused&&backgroundSwitching){
+  if(!manualPause&&shouldContinuePlayback&&audio.paused&&backgroundSwitching){
     safePlay(false);
   }
 });
@@ -960,8 +1023,9 @@ document.addEventListener('visibilitychange',async()=>{
   }
 
   // 從導航 / 鎖定畫面回到播放器時，若原本應該播放卻停住，嘗試恢復
-  if(wantsPlayback&&audio.paused&&tracks[currentIndex]){
-    await safePlay(false);
+  if(!manualPause&&shouldContinuePlayback&&audio.paused&&tracks[currentIndex]){
+    const ok=await safePlay(false);
+    if(!ok)scheduleRecovery();
   }
 
   // 回到前景後補抓目前歌詞
@@ -1001,8 +1065,8 @@ function mediaAction(name,fn){
   if(!('mediaSession'in navigator))return;
   try{navigator.mediaSession.setActionHandler(name,fn)}catch(e){}
 }
-mediaAction('play',safePlay);
-mediaAction('pause',()=>{wantsPlayback=false;clearRecovery();audio.pause()});
+mediaAction('play',()=>userPlay());
+mediaAction('pause',()=>userPause());
 mediaAction('previoustrack',prevTrack);
 mediaAction('nexttrack',nextTrack);
 mediaAction('seekbackward',d=>seekBy(-(d.seekOffset||15)));
