@@ -61,7 +61,10 @@ body.light{--bg:#f0f2f5;--card:#fff;--item:#e4e6eb;--panel:#f8f9fa;--muted:#666;
     <button id="themeBtn" class="icon" title="切換深淺色">🌞</button>
   </div>
 
-  <h3 id="title">載入中...</h3>
+  <div class="now-playing-title">
+      <h3 id="title">載入中...</h3>
+      <button id="nowFavBtn" type="button" title="加入最愛" aria-label="加入最愛">♡</button>
+    </div>
   <span class="artist">MZG 馬子狗</span>
 
   <div class="traffic" id="trafficPanel">
@@ -131,7 +134,7 @@ modeBtn=$('modeBtn'),progress=$('progress'),now=$('now'),duration=$('duration'),
 volume=$('volume'),muteBtn=$('muteBtn'),syncBtn=$('syncBtn'),themeBtn=$('themeBtn'),
 toggleLyrics=$('toggleLyrics'),
 trackSize=$('trackSize'),bitrate=$('bitrate'),
-sessionTraffic=$('sessionTraffic'),todayTraffic=$('todayTraffic');
+sessionTraffic=$('sessionTraffic'),todayTraffic=$('todayTraffic'),nowFavBtn=$('nowFavBtn');
 
 let tracks=[],currentIndex=0,currentFilter='all',parsedLyrics=[],activeLyric=-1;
 let shuffleQueue=[],shuffleHistory=[],loadToken=0,isSeeking=false,isSyncing=false;
@@ -185,6 +188,15 @@ function isFavorite(track){
   return !!track&&favoriteIds.has(track.id);
 }
 
+function updateNowFavoriteUI(){
+  const track=tracks[currentIndex];
+  const active=isFavorite(track);
+  nowFavBtn.classList.toggle('active',active);
+  nowFavBtn.textContent=active?'♥':'♡';
+  nowFavBtn.title=active?'取消最愛':'加入最愛';
+  nowFavBtn.setAttribute('aria-label',nowFavBtn.title);
+}
+
 function toggleFavorite(index,event){
   if(event){
     event.stopPropagation();
@@ -203,6 +215,7 @@ function toggleFavorite(index,event){
   saveFavoriteIds();
   renderPlaylist();
   updatePlaylistUI();
+  updateNowFavoriteUI();
 }
 
 
@@ -461,6 +474,11 @@ document.querySelectorAll('.tab').forEach(btn=>btn.onclick=e=>{
   shuffleQueue=[];shuffleHistory=[];
   applyFilter();
 });
+
+nowFavBtn.onclick=(e)=>{
+  if(!tracks[currentIndex])return;
+  toggleFavorite(currentIndex,e);
+};
 
 function validIndices(){
   return tracks
@@ -1040,6 +1058,7 @@ function renderPlaylist(){
 }
 
 function updatePlaylistUI(){
+  updateNowFavoriteUI();
   const buttons=playlist.querySelectorAll('.track');
   buttons.forEach((b,i)=>b.classList.toggle('active',i===currentIndex));
   const b=buttons[currentIndex];
