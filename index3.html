@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="客家精神">
 <title>客家精神雲端音樂播放器</title>
-<!-- iPhone playback control fix v4.4: synchronous track switching -->
+<!-- iPhone playback control fix v4.5: remembered playlist filter -->
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -147,7 +147,9 @@ toggleLyrics=$('toggleLyrics'),
 trackSize=$('trackSize'),bitrate=$('bitrate'),
 sessionTraffic=$('sessionTraffic'),todayTraffic=$('todayTraffic'),nowFavBtn=$('nowFavBtn');
 
-let tracks=[],currentIndex=0,currentFilter='all',parsedLyrics=[],activeLyric=-1;
+let tracks=[],currentIndex=0,parsedLyrics=[],activeLyric=-1;
+let currentFilter=localStorage.getItem('mzg_saved_playlist_filter')||'all';
+if(!['all','short','long','favorite'].includes(currentFilter))currentFilter='all';
 let shuffleQueue=[],shuffleHistory=[],loadToken=0,isSeeking=false,isSyncing=false;
 let lastSave=0,lastMediaUpdate=0;
 
@@ -176,8 +178,12 @@ let trafficDate='';
 let trafficSaveAt=0;
 
 const K={
- folder:'mzg_saved_folder',loop:'mzg_saved_loop_mode',lyrics:'mzg_saved_lyrics_state',
- theme:'mzg_saved_theme',volume:'mzg_saved_volume'
+ folder:'mzg_saved_folder',
+ loop:'mzg_saved_loop_mode',
+ lyrics:'mzg_saved_lyrics_state',
+ theme:'mzg_saved_theme',
+ volume:'mzg_saved_volume',
+ filter:'mzg_saved_playlist_filter'
 };
 let currentFolder=localStorage.getItem(K.folder)||'music1';
 if(!FOLDERS[currentFolder])currentFolder='music1';
@@ -535,6 +541,7 @@ document.querySelectorAll('.tab').forEach(btn=>btn.onclick=e=>{
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
   e.currentTarget.classList.add('active');
   currentFilter=e.currentTarget.dataset.filter;
+  localStorage.setItem(K.filter,currentFilter);
   shuffleQueue=[];shuffleHistory=[];
   applyFilter();
 });
@@ -555,6 +562,12 @@ function validIndices(){
     )
     .map(x=>x.i);
 }
+function restoreFilterTabUI(){
+  document.querySelectorAll('.tab').forEach(btn=>{
+    btn.classList.toggle('active',btn.dataset.filter===currentFilter);
+  });
+}
+
 function applyFilter(){
   playlist.querySelectorAll('.track').forEach((b,i)=>{
     const t=tracks[i];
@@ -784,6 +797,8 @@ function setupUI(source='cloud'){
   tabs.style.display='flex';
   toggleLyrics.style.display='block';
   renderPlaylist();
+  restoreFilterTabUI();
+  applyFilter();
   small.style.display='block';
   small.textContent=source==='cache'?'⚡ 已使用手機快取歌單':'☁️ 已完成 Google Drive 同步';
 
