@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="客家精神">
 <title>客家精神雲端音樂播放器</title>
-<!-- v4.6: iPhone Car Mode UI -->
+<!-- v4.5 + local playlist search: playback core unchanged -->
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -59,26 +59,20 @@ body.light .fav-btn.active{color:#e6395f}
 body.light{--bg:#f0f2f5;--card:#fff;--item:#e4e6eb;--panel:#f8f9fa;--muted:#666;color:#1a1a1a}body.light .top,body.light .nav,body.light .mode,body.light .toggle,body.light .tab{border-color:#ccc}body.light .track{color:#333;border-color:#eee}body.light .track.active,body.light .tab.active{color:#000}body.light .line{color:#888}body.light .line.active{color:#159b3c}body.light input[type=range]{background:#ddd}
 @media(max-width:370px){body{padding-left:8px;padding-right:8px}.card{padding-left:11px;padding-right:11px}.mainbar{grid-template-columns:41px 41px 52px 41px 41px}.nav{width:41px;height:41px}#playBtn{width:52px;height:52px}.top select{font-size:12px}}
 
-/* ===== 車用模式 ===== */
-.car-mode-btn{background:#2a2a2a;color:#fff;border:1px solid #555;border-radius:8px;padding:6px 9px;font-size:14px;font-weight:700;cursor:pointer}
-.car-panel{display:none}
-body.car-mode{padding:0;background:#080808;align-items:stretch}
-body.car-mode .player-card{max-width:none;min-height:100vh;box-sizing:border-box;border-radius:0;box-shadow:none;padding:18px 16px 30px;background:#101010}
-body.car-mode .folder-selector,body.car-mode .custom-controls-container,body.car-mode .player-toolbar,body.car-mode .playlist-tabs,body.car-mode #loading-msg,body.car-mode .playlist,body.car-mode #toggle-lyrics-btn,body.car-mode .lyrics-container,body.car-mode .traffic-panel{display:none!important}
-body.car-mode h3#track-title{text-align:center;font-size:clamp(30px,8vw,46px);line-height:1.15;margin:24px 4px 8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-body.car-mode #track-artist{text-align:center;font-size:18px;margin-bottom:22px}
-body.car-mode .car-panel{display:flex;flex-direction:column;gap:20px;max-width:620px;margin:0 auto}
-.car-top{display:flex;gap:12px}.car-top button,.car-bottom button{min-height:58px;border:0;border-radius:17px;background:#292929;color:#fff;font-size:17px;font-weight:800}
-.car-exit{padding:0 17px}.car-fav{flex:1}.car-fav.active,.car-bottom button.active{background:#1db954;color:#000}
-.car-progress{display:flex;align-items:center;gap:10px;color:#aaa;font-size:13px}.car-progress input{height:8px}
-.car-controls{display:grid;grid-template-columns:1fr 1.15fr 1.55fr 1.15fr 1fr;gap:8px;align-items:center}
-.car-control{height:70px;min-width:0;border:0;border-radius:20px;background:#292929;color:#fff;font-size:25px;font-weight:800}
-#car-play{height:84px;border-radius:26px;background:#1db954;color:#000;font-size:34px}
-.car-bottom{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.car-note{text-align:center;color:#777;font-size:12px;line-height:1.45}
-body.light-mode.car-mode{background:#eee}body.light-mode.car-mode .player-card{background:#fff}
-body.light-mode.car-mode .car-top button,body.light-mode.car-mode .car-control,body.light-mode.car-mode .car-bottom button{background:#e4e6eb;color:#222}
-body.light-mode.car-mode #car-play,body.light-mode.car-mode .car-fav.active,body.light-mode.car-mode .car-bottom button.active{background:#1db954;color:#000}
+/* ===== 歌曲搜尋：僅篩選已載入的歌單 ===== */
+.search-box{display:none;position:relative;margin:0 0 10px}
+.search-box.show{display:flex}
+.search-input{
+  width:100%;height:42px;padding:0 42px 0 38px;border:1px solid #444;border-radius:10px;
+  background:var(--panel);color:#fff;outline:none;font-size:15px
+}
+.search-input:focus{border-color:var(--g)}
+.search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:15px}
+.search-clear{
+  position:absolute;right:5px;top:5px;width:32px;height:32px;border:0;border-radius:50%;
+  background:transparent;color:#aaa;font-size:18px;padding:0
+}
+body.light .search-input{background:#f8f9fa;color:#222;border-color:#ccc}
 
 </style>
 </head>
@@ -138,6 +132,15 @@ body.light-mode.car-mode #car-play,body.light-mode.car-mode .car-fav.active,body
     <button class="tab" data-filter="favorite">♥ 最愛</button>
   </div>
 
+  <div id="searchBox" class="search-box">
+    <span class="search-icon">🔍</span>
+    <input id="searchInput" class="search-input" type="search"
+           placeholder="搜尋歌曲名稱…" autocomplete="off"
+           autocorrect="off" autocapitalize="off" spellcheck="false">
+    <button id="searchClear" class="search-clear" type="button"
+            title="清除搜尋" aria-label="清除搜尋">✕</button>
+  </div>
+
   <div id="status" class="status">正在載入歌單，請稍候...</div>
   <div id="small" class="small" style="display:none"></div>
   <div id="playlist" class="playlist" style="display:none"></div>
@@ -167,9 +170,11 @@ modeBtn=$('modeBtn'),progress=$('progress'),now=$('now'),duration=$('duration'),
 volume=$('volume'),muteBtn=$('muteBtn'),syncBtn=$('syncBtn'),themeBtn=$('themeBtn'),
 toggleLyrics=$('toggleLyrics'),
 trackSize=$('trackSize'),bitrate=$('bitrate'),
-sessionTraffic=$('sessionTraffic'),todayTraffic=$('todayTraffic'),nowFavBtn=$('nowFavBtn');
+sessionTraffic=$('sessionTraffic'),todayTraffic=$('todayTraffic'),nowFavBtn=$('nowFavBtn'),
+searchBox=$('searchBox'),searchInput=$('searchInput'),searchClear=$('searchClear');
 
 let tracks=[],currentIndex=0,parsedLyrics=[],activeLyric=-1;
+let searchQuery='';
 let currentFilter=localStorage.getItem('mzg_saved_playlist_filter')||'all';
 if(!['all','short','long','favorite'].includes(currentFilter))currentFilter='all';
 let shuffleQueue=[],shuffleHistory=[],loadToken=0,isSeeking=false,isSyncing=false;
@@ -218,7 +223,6 @@ const idKey=()=>`mzg_saved_track_id_${currentFolder}`;
 const timeKey=()=>`mzg_saved_track_time_${currentFolder}`;
 const cacheKey=()=>`mzg_playlist_cache_v2_${currentFolder}`;
 const FAVORITES_KEY='mzg_favorite_track_ids_v1';
-const CAR_MODE_KEY='mzg_saved_car_mode';
 
 function loadFavoriteIds(){
   try{
@@ -511,6 +515,8 @@ $('forwardBtn').onclick=()=>seekBy(15);
 folder.value=currentFolder;
 folder.onchange=async e=>{
   saveState();
+  searchQuery='';
+  searchInput.value='';
   currentFolder=e.target.value;
   localStorage.setItem(K.folder,currentFolder);
   shuffleQueue=[];shuffleHistory=[];
@@ -532,6 +538,7 @@ function resetUI(){
   title.textContent='載入中...';
   lyrics.innerHTML='<div class="line">載入中...</div>';
   playlist.style.display=tabs.style.display=toggleLyrics.style.display='none';
+  searchBox.classList.remove('show');
   status.style.display='block';status.textContent='正在載入歌單，請稍候...';
   small.style.display='none';
   progress.value=0;now.textContent=duration.textContent='0:00';
@@ -574,15 +581,33 @@ nowFavBtn.onclick=(e)=>{
   toggleFavorite(currentIndex,e);
 };
 
+searchInput.addEventListener('input',()=>{
+  searchQuery=searchInput.value||'';
+  shuffleQueue=[];shuffleHistory=[];
+  applyFilter();
+});
+
+searchClear.onclick=()=>{
+  searchInput.value='';
+  searchQuery='';
+  shuffleQueue=[];shuffleHistory=[];
+  applyFilter();
+  searchInput.focus();
+};
+
 function validIndices(){
+  const q=searchQuery.trim().toLocaleLowerCase('zh-TW');
   return tracks
     .map((t,i)=>({t,i}))
-    .filter(({t})=>
-      currentFilter==='all' ||
-      (currentFilter==='short'&&!t.isLong) ||
-      (currentFilter==='long'&&t.isLong) ||
-      (currentFilter==='favorite'&&isFavorite(t))
-    )
+    .filter(({t})=>{
+      const filterOK=
+        currentFilter==='all' ||
+        (currentFilter==='short'&&!t.isLong) ||
+        (currentFilter==='long'&&t.isLong) ||
+        (currentFilter==='favorite'&&isFavorite(t));
+      const searchOK=!q || String(t.title||'').toLocaleLowerCase('zh-TW').includes(q);
+      return filterOK&&searchOK;
+    })
     .map(x=>x.i);
 }
 function restoreFilterTabUI(){
@@ -592,14 +617,9 @@ function restoreFilterTabUI(){
 }
 
 function applyFilter(){
+  const visible=new Set(validIndices());
   playlist.querySelectorAll('.track').forEach((b,i)=>{
-    const t=tracks[i];
-    const show=
-      currentFilter==='all' ||
-      (currentFilter==='short'&&!t.isLong) ||
-      (currentFilter==='long'&&t.isLong) ||
-      (currentFilter==='favorite'&&isFavorite(t));
-    b.style.display=show?'flex':'none';
+    b.style.display=visible.has(i)?'flex':'none';
   });
 }
 
@@ -818,6 +838,7 @@ function setupUI(source='cloud'){
   status.style.display='none';
   playlist.style.display='block';
   tabs.style.display='flex';
+  searchBox.classList.add('show');
   toggleLyrics.style.display='block';
   renderPlaylist();
   restoreFilterTabUI();
@@ -1304,76 +1325,6 @@ window.addEventListener('offline',()=>{
 window.addEventListener('online',()=>{
   if(tracks.length){small.style.display='block';small.textContent='🌐 網路已恢復'}
 });
-
-
-/* ===== 車用模式 ===== */
-let carMode=localStorage.getItem(CAR_MODE_KEY)==='true';
-const carModeBtn=$('car-mode-btn'),carExit=$('car-exit'),carFav=$('car-fav');
-const carCurrent=$('car-current'),carDuration=$('car-duration'),carProgress=$('car-progress');
-const carPlay=$('car-play'),carLoop=$('car-loop'),carFilter=$('car-filter');
-
-function carFilterText(){
-  return currentFilter==='short'?'🎵 單曲':
-         currentFilter==='long'?'⏳ 長篇':
-         currentFilter==='favorite'?'♥ 最愛':'🎵 全部';
-}
-function updateCarUI(){
-  document.body.classList.toggle('car-mode',carMode);
-  carModeBtn.textContent=carMode?'🚗✓':'🚗';
-  carPlay.textContent=audio.paused?'▶':'⏸';
-  carCurrent.textContent=fmt(audio.currentTime||0);
-  carDuration.textContent=fmt(audio.duration||0);
-  if(Number.isFinite(audio.duration)&&audio.duration>0)carProgress.value=(audio.currentTime/audio.duration)*100;
-  const tr=tracks[currentIndex];
-  const fav=isFavorite(tr);
-  carFav.textContent=fav?'♥ 已加入最愛':'♡ 加到最愛';
-  carFav.classList.toggle('active',fav);
-  carLoop.textContent=loopMode==='single'?'🔂 單曲':loopMode==='shuffle'?'🔀 隨機':'🔁 列表';
-  carLoop.classList.toggle('active',loopMode==='shuffle');
-  carFilter.textContent=carFilterText();
-}
-function setCarMode(v){
-  carMode=!!v;
-  localStorage.setItem(CAR_MODE_KEY,String(carMode));
-  updateCarUI();
-}
-carModeBtn.onclick=()=>setCarMode(!carMode);
-carExit.onclick=()=>setCarMode(false);
-carPlay.onclick=()=>audio.paused||audio.ended?directPlay():directPause();
-$('car-prev').onclick=()=>prevTrack();
-$('car-next').onclick=()=>nextTrack();
-$('car-back15').onclick=()=>{if(Number.isFinite(audio.duration))audio.currentTime=Math.max(0,audio.currentTime-15)};
-$('car-forward15').onclick=()=>{if(Number.isFinite(audio.duration))audio.currentTime=Math.min(audio.duration,audio.currentTime+15)};
-carProgress.oninput=()=>{if(Number.isFinite(audio.duration)&&audio.duration>0)carCurrent.textContent=fmt((Number(carProgress.value)/100)*audio.duration)};
-carProgress.onchange=()=>{if(Number.isFinite(audio.duration)&&audio.duration>0)audio.currentTime=(Number(carProgress.value)/100)*audio.duration};
-carFav.onclick=()=>{
-  if(!tracks[currentIndex])return;
-  toggleFavorite(currentIndex);
-  restoreFilterTabUI();
-  applyFilter();
-  updateCarUI();
-};
-carLoop.onclick=()=>{
-  if(loopMode==='list')loopMode='single';
-  else if(loopMode==='single')loopMode='shuffle';
-  else loopMode='list';
-  localStorage.setItem(K.loop,loopMode);
-  updateLoopUI();
-  shuffleQueue=[];shuffleHistory=[];
-  updateCarUI();
-};
-carFilter.onclick=()=>{
-  const modes=['all','short','long','favorite'];
-  currentFilter=modes[(modes.indexOf(currentFilter)+1)%modes.length];
-  localStorage.setItem(K.filter,currentFilter);
-  shuffleQueue=[];shuffleHistory=[];
-  restoreFilterTabUI();applyFilter();updateCarUI();
-};
-audio.addEventListener('play',updateCarUI);
-audio.addEventListener('pause',updateCarUI);
-audio.addEventListener('loadedmetadata',updateCarUI);
-audio.addEventListener('timeupdate',updateCarUI);
-updateCarUI();
 
 fetchDrive(false);
 </script>
