@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>客家精神雲端音樂播放器 (極速快取版)</title>
+  <title>客家精神雲端音樂播放器 (多歌單切換版)</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -55,7 +55,6 @@
       cursor: pointer;
     }
     
-    /* 新增同步按鈕的樣式 */
     .sync-btn {
       background: #1db954;
       color: #000;
@@ -93,7 +92,7 @@
       justify-content: space-between; 
       align-items: center; 
       margin-top: 12px;
-      margin-bottom: 16px; 
+      margin-bottom: 12px; 
       gap: 8px;
     }
     
@@ -120,6 +119,28 @@
     .toggle-btn {
       width: 100%;
       margin-bottom: 8px;
+    }
+
+    /* 控制列下方的小工具列 (排序切換) */
+    .sub-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .sort-btn {
+      background: #2a2a2a;
+      color: #aaa;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .sort-btn.active {
+      color: #1db954;
+      border-color: #1db954;
+      font-weight: bold;
     }
 
     .playlist-tabs {
@@ -230,10 +251,10 @@
     <div class="folder-selector">
       <label for="folder-select">📁</label>
       <select id="folder-select">
-        <option value="music1">[MUSIC] 預設主資料夾</option>
+        <option value="music1">[MUSIC] 大人主歌單</option>
         <option value="music2">[MUSIC2] 專輯與其他音樂</option>
+        <option value="baby">[BABY] 兒童專屬音樂 👶</option>
       </select>
-      <!-- 加入手動同步按鈕 -->
       <button id="sync-btn" class="sync-btn" title="從雲端重新抓取最新歌單">🔄 同步</button>
     </div>
 
@@ -245,6 +266,15 @@
       <button id="prev-btn" class="nav-btn">⏮ 上一首</button>
       <button id="loop-btn" class="loop-mode-btn">🔁 列表循環</button>
       <button id="next-btn" class="nav-btn">下一首 ⏭</button>
+    </div>
+
+    <!-- 排序切換按鈕 -->
+    <div class="sub-toolbar">
+      <span style="font-size: 13px; color: #888;">排序方式：</span>
+      <div>
+        <button id="sort-name-btn" class="sort-btn">🔤 檔名排序</button>
+        <button id="sort-date-btn" class="sort-btn active">📅 新增日期 (新在後)</button>
+      </div>
     </div>
 
     <div class="playlist-tabs" id="playlist-tabs" style="display: none;">
@@ -268,7 +298,8 @@
     const API_KEY = 'AIzaSyClVDG_eXTcR5U1-4j9tN_9tJKfoegBf1c'; 
     const FOLDERS = {
       'music1': '1n0n4ZJUGrtDtEcc79QakcMUYG52g60UX', 
-      'music2': '12qXblcE82laVwc7d7VhUoEzusnWTNmZ6' 
+      'music2': '12qXblcE82laVwc7d7VhUoEzusnWTNmZ6',
+      'baby': '19oEmu69-uzyuMIFVIiQfiIoR7llK6xfH'  // 新增的 BABY 資料夾
     };
     // =================================================
 
@@ -280,11 +311,10 @@
     const SAVED_FOLDER_KEY = 'mzg_saved_folder';
     const SAVED_LOOP_KEY = 'mzg_saved_loop_mode';
     const SAVED_LYRICS_KEY = 'mzg_saved_lyrics_state';
+    const SAVED_SORT_KEY = 'mzg_saved_sort_mode'; 
     
     function getIndexKey() { return `mzg_saved_track_index_${currentFolderKey}`; }
     function getTimeKey() { return `mzg_saved_track_time_${currentFolderKey}`; }
-    
-    // 【全新快取記憶機制】替每個資料夾建立專屬的歌單 Cache Key
     function getCacheKey() { return `mzg_playlist_cache_${currentFolderKey}`; }
 
     let currentFolderKey = localStorage.getItem(SAVED_FOLDER_KEY) || 'music1';
@@ -292,6 +322,7 @@
     
     let loopMode = localStorage.getItem(SAVED_LOOP_KEY) || 'list'; 
     let isLyricsHidden = localStorage.getItem(SAVED_LYRICS_KEY) === 'true';
+    let currentSortMode = localStorage.getItem(SAVED_SORT_KEY) || 'date'; 
 
     const audio = document.getElementById('audio-player');
     const titleEl = document.getElementById('track-title');
@@ -306,6 +337,45 @@
     const toggleLyricsBtn = document.getElementById('toggle-lyrics-btn');
     const folderSelect = document.getElementById('folder-select');
     const syncBtn = document.getElementById('sync-btn');
+    
+    const sortNameBtn = document.getElementById('sort-name-btn');
+    const sortDateBtn = document.getElementById('sort-date-btn');
+
+    // === 排序切換按鈕事件 ===
+    function updateSortUI() {
+      if (currentSortMode === 'date') {
+        sortDateBtn.classList.add('active');
+        sortNameBtn.classList.remove('active');
+      } else {
+        sortNameBtn.classList.add('active');
+        sortDateBtn.classList.remove('active');
+      }
+    }
+
+    sortNameBtn.addEventListener('click', () => {
+      currentSortMode = 'name';
+      localStorage.setItem(SAVED_SORT_KEY, 'name');
+      updateSortUI();
+      sortAndRefreshPlaylist();
+    });
+
+    sortDateBtn.addEventListener('click', () => {
+      currentSortMode = 'date';
+      localStorage.setItem(SAVED_SORT_KEY, 'date');
+      updateSortUI();
+      sortAndRefreshPlaylist();
+    });
+
+    function sortAndRefreshPlaylist() {
+      if (currentSortMode === 'date') {
+        // 依新增日期排序：越後面新增的排越後面
+        playlistData.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime));
+      } else {
+        // 依檔名筆劃排序
+        playlistData.sort((a, b) => a.title.localeCompare(b.title, 'zh-TW'));
+      }
+      renderPlaylist();
+    }
 
     // === 切換資料夾事件 ===
     folderSelect.value = currentFolderKey;
@@ -313,14 +383,11 @@
       currentFolderKey = e.target.value;
       localStorage.setItem(SAVED_FOLDER_KEY, currentFolderKey);
       resetPlayerUI();
-      // 切換資料夾時，預設讀取快取 (不強制去雲端掃描)
       fetchDriveFiles(false);
     });
 
-    // === 點擊手動同步按鈕 ===
     syncBtn.addEventListener('click', () => {
       resetPlayerUI();
-      // 強制去雲端深度掃描，並覆寫快取！
       fetchDriveFiles(true);
     });
 
@@ -441,13 +508,14 @@
       }
     });
 
-    // === 將播放清單渲染畫面與綁定播放狀態抽出為獨立功能 ===
     function setupPlaylistUI() {
       loadingMsg.style.display = 'none';
       playlistContainer.style.display = 'block';
       tabsContainer.style.display = 'flex'; 
       toggleLyricsBtn.style.display = 'block';
-      renderPlaylist();
+      
+      updateSortUI();
+      sortAndRefreshPlaylist(); 
       
       let savedIndex = parseInt(localStorage.getItem(getIndexKey())) || 0;
       let savedTime = parseFloat(localStorage.getItem(getTimeKey())) || 0;
@@ -456,11 +524,9 @@
       loadTrack(savedIndex, savedTime);
     }
 
-    // === 加入快取判斷的檔案讀取功能 ===
     async function fetchDriveFiles(forceSync = false) {
       const cacheKey = getCacheKey();
       
-      // 如果不是強制同步，且手機內已經有存好的歌單記憶，直接 0.1 秒瞬間讀取！
       if (!forceSync) {
         const cachedData = localStorage.getItem(cacheKey);
         if (cachedData) {
@@ -470,9 +536,8 @@
         }
       }
 
-      // 如果需要深度掃描 (首次進入或按了同步按鈕)，才向 Google 請求
       const currentId = FOLDERS[currentFolderKey];
-      loadingMsg.textContent = '🚀 正在進行雲端深度掃描，請稍候...(成功後將自動記憶)';
+      loadingMsg.textContent = '🚀 正在進行雲端掃描，請稍候...';
       loadingMsg.style.display = 'block';
 
       try {
@@ -489,7 +554,6 @@
             let localFolders = [];
 
             do {
-              // API 請求的 fields 加上 createdTime
               const url = `https://www.googleapis.com/drive/v3/files?q='${fId}'+in+parents+and+trashed=false&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,size,createdTime)&key=${API_KEY}${pageToken ? '&pageToken=' + pageToken : ''}`;
               const response = await fetch(url);
               
@@ -525,7 +589,7 @@
         }
 
         if (allMp3s.length === 0) {
-          loadingMsg.textContent = '雲端資料夾內皆沒有 MP3 檔案。';
+          loadingMsg.textContent = '雲端資料夾內沒有音樂檔案，請確認是否已上傳 MP3。';
           return;
         }
 
@@ -534,30 +598,22 @@
           const matchedLrc = allLrcs.find(lrc => lrc.name.substring(0, lrc.name.lastIndexOf('.')) === baseName);
           const sizeBytes = parseInt(mp3.size || '0', 10);
           const isLong = sizeBytes >= 14400000;
-          
-          // 將雲端的建立時間轉換為時間戳記
-          const createdTime = mp3.createdTime ? new Date(mp3.createdTime).getTime() : 0;
 
           return {
             title: baseName,
             id: mp3.id,
             lrcId: matchedLrc ? matchedLrc.id : null,
             isLong: isLong,
-            createdTime: createdTime
+            createdTime: mp3.createdTime || new Date().toISOString()
           };
         });
 
-        // 改用建立時間排序 (舊 -> 新，越晚新增的排越後面)
-        playlistData.sort((a, b) => a.createdTime - b.createdTime);
-
-        // 【大功告成】把千辛萬苦掃描出來的歌單，直接存進手機記憶體裡！
         localStorage.setItem(cacheKey, JSON.stringify(playlistData));
-        
         setupPlaylistUI();
         
       } catch (err) {
         console.error(err);
-        loadingMsg.textContent = '讀取失敗，可能是短時間內讀取太多次，請稍後再試。如果您已經有快取檔案，只要不按同步，重開網頁依舊能播歌！';
+        loadingMsg.textContent = '讀取失敗，可能是短時間內讀取太多次。如果您之前有成功載入過，重新整理網頁即可播放快取中的歌曲！';
       }
     }
 
@@ -684,7 +740,7 @@
       buttons.forEach((btn, idx) => btn.classList.toggle('active', idx === currentIndex));
     }
 
-    // 啟動時預設讀取快取檔案！(括號為 false 代表不強制去雲端掃描)
+    // 啟動時預設讀取快取檔案
     fetchDriveFiles(false);
   </script>
 </body>
