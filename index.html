@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="客家精神">
 <title>客家精神雲端音樂播放器</title>
-<!-- v4.5 + local playlist search: playback core unchanged -->
+<!-- v4.5 + local search + MUSIC/MUSIC2/BABY/ANIME playlists: playback core unchanged -->
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -83,6 +83,8 @@ body.light .search-input{background:#f8f9fa;color:#222;border-color:#ccc}
     <select id="folder">
       <option value="music1">[MUSIC] 預設主資料夾</option>
       <option value="music2">[MUSIC2] 專輯與其他音樂</option>
+      <option value="baby">[BABY] 兒童音樂 👶</option>
+      <option value="anime">[ANIME] 卡通／動畫音樂 🎬</option>
     </select>
     <button id="syncBtn" class="sync" title="重新同步">🔄</button>
     <button id="themeBtn" class="icon" title="切換深淺色">🌞</button>
@@ -155,7 +157,9 @@ body.light .search-input{background:#f8f9fa;color:#222;border-color:#ccc}
 const API_KEY='AIzaSyClVDG_eXTcR5U1-4j9tN_9tJKfoegBf1c';
 const FOLDERS={
   music1:'1n0n4ZJUGrtDtEcc79QakcMUYG52g60UX',
-  music2:'12qXblcE82laVwc7d7VhUoEzusnWTNmZ6'
+  music2:'12qXblcE82laVwc7d7VhUoEzusnWTNmZ6',
+  baby:'19oEmu69-uzyuMIFVIiQfiIoR7llK6xfH',
+  anime:'1T2HWuZKwdOJ0iW8wlUstGIdyJ9-T4nen'
 };
 const COVER_URL='https://cdn-icons-png.flaticon.com/512/3269/3269985.png';
 const ARTIST='MZG 馬子狗';
